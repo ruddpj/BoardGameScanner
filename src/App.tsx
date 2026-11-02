@@ -9,6 +9,9 @@ type Scan = { id: string; game_id: string; scanned_at: string };
 type View = "collection" | "labels" | "session" | "past-sessions";
 type FocusModeCapabilities = MediaTrackCapabilities & { focusMode?: string[] };
 type FocusModeConstraints = MediaTrackConstraints & { focusMode?: ConstrainDOMString };
+type ZoomCapabilities = MediaTrackCapabilities & { zoom?: DoubleRange };
+type ZoomConstraintSet = MediaTrackConstraintSet & { zoom?: ConstrainDouble };
+type ZoomConstraints = MediaTrackConstraints & { advanced?: ZoomConstraintSet[] };
 
 const storageKey = "tabletop-tracker-games";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -123,6 +126,7 @@ function App() {
   const [lastScan, setLastScan] = useState<{ gameName: string; alreadyScanned: boolean } | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraZoom, setCameraZoom] = useState<{ min: number; max: number; step: number; value: number } | null>(null);
   const [capturingPhoto, setCapturingPhoto] = useState(false);
   const [manualUuid, setManualUuid] = useState("");
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
@@ -337,6 +341,17 @@ function App() {
             focusMode: { ideal: "continuous" },
           } as FocusModeConstraints);
         }
+        const zoom = (videoTrack?.getCapabilities() as ZoomCapabilities | undefined)?.zoom;
+        if (zoom?.min !== undefined && zoom.max !== undefined && zoom.max > zoom.min) {
+          setCameraZoom({
+            min: zoom.min,
+            max: zoom.max,
+            step: (zoom.max - zoom.min) / 20,
+            value: videoTrack?.getSettings().zoom ?? zoom.min,
+          });
+        } else {
+          setCameraZoom(null);
+        }
       } catch (cameraError) {
         if (active) setError(`Could not start camera: ${(cameraError as Error).message}`);
       }
@@ -345,6 +360,7 @@ function App() {
     return () => {
       active = false;
       setCameraReady(false);
+      setCameraZoom(null);
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
       cameraStreamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
@@ -736,19 +752,42 @@ function App() {
     setLastScan(null);
     try {
       const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("Could not capture an image from the camera.");
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const videoTrack = cameraStreamRef.current?.getVideoTracks()[0];
+      if (videoTrack && "ImageCapture" in window) {
+        const photo = await new ImageCapture(videoTrack).takePhoto();
+        const image = await createImageBitmap(photo);
+        canvas.width = image.width;
+        canvas.height = image.height;
+        context.drawImage(image, 0, 0);
+        image.close();
+      } else {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
       const result = new BrowserMultiFormatReader().decodeFromCanvas(canvas);
       await recordScan(result.getText());
     } catch (captureError) {
       setError(
-        `Could not read a QR code from that picture: ${(captureError as Error).message}. Try moving closer and taking another picture.`,
+        `Could not read a QR code from that picture: ${(captureError as Error).message}. Hold the phone slightly farther away until the code looks sharp, then try again.`,
       );
     } finally {
       setCapturingPhoto(false);
+    }
+  }
+
+  async function changeCameraZoom(value: number) {
+    const videoTrack = cameraStreamRef.current?.getVideoTracks()[0];
+    if (!videoTrack) return;
+    try {
+      await videoTrack.applyConstraints({
+        advanced: [{ zoom: value }],
+      } as ZoomConstraints);
+      setCameraZoom((current) => current ? { ...current, value } : current);
+    } catch (zoomError) {
+      setError(`Could not adjust camera zoom: ${(zoomError as Error).message}`);
     }
   }
 
@@ -1088,6 +1127,25 @@ function App() {
                         <video ref={videoRef} className="camera-feed" muted playsInline />
                         <button className="button button-light button-small camera-close" onClick={() => setScannerOpen(false)} type="button">Stop camera</button>
                       </div>
+                      <p className="camera-tip">
+                        Keep the QR code flat and move the phone slightly farther away until it looks sharp.
+                        {cameraZoom && " Use the zoom control instead of moving too close."}
+                      </p>
+                      {cameraZoom && (
+                        <label className="camera-zoom-control" htmlFor="camera-zoom">
+                          <span>Zoom</span>
+                          <input
+                            id="camera-zoom"
+                            type="range"
+                            min={cameraZoom.min}
+                            max={cameraZoom.max}
+                            step={cameraZoom.step}
+                            value={cameraZoom.value}
+                            onChange={(event) => void changeCameraZoom(Number(event.target.value))}
+                          />
+                          <span>{cameraZoom.value.toFixed(1)}×</span>
+                        </label>
+                      )}
                       <button
                         className="button button-primary capture-button"
                         disabled={!cameraReady || capturingPhoto}

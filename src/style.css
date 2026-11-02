@@ -140,6 +140,10 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
 .camera-wrap { position: relative; max-width: 480px; overflow: hidden; border-radius: 7px; background: #08070b; }
 .camera-feed { width: 100%; max-height: 340px; object-fit: cover; }
 .camera-close { position: absolute; top: 9px; right: 9px; }
+.camera-tip { max-width: 480px; margin: 8px 0; color: #a9a0b5; font-size: 10px; line-height: 1.5; }
+.camera-zoom-control { display: flex; align-items: center; gap: 10px; max-width: 480px; margin: 8px 0; color: #cec5d9; font-size: 10px; }
+.camera-zoom-control input { flex: 1; accent-color: #9a6be0; }
+.camera-zoom-control > span:last-child { min-width: 35px; text-align: right; }
 .capture-button { margin-top: 10px; }
 .scan-confirmation { display: flex; align-items: center; gap: 9px; max-width: 480px; margin-top: 12px; padding: 10px 12px; border: 1px solid #395c48; border-radius: 6px; background: #1c2a22; color: #a0d4ad; font-size: 11px; }
 .scan-confirmation strong { color: #d3f0d7; }
