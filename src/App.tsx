@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Game = { id: string; name: string; copies: number };
 type ScanSession = { id: string; code: string; created_at: string; saved_at?: string | null };
-type Scan = { game_id: string; scanned_by: string; scanned_at: string };
+type Scan = { game_id: string; scanned_at: string };
 type View = "collection" | "labels" | "session" | "past-sessions";
 
 const storageKey = "tabletop-tracker-games";
@@ -117,10 +117,8 @@ function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
-  const [playerName, setPlayerName] = useState(
-    () => localStorage.getItem("tabletop-tracker-player") ?? "",
-  );
   const [scans, setScans] = useState<Scan[]>([]);
+  const [lastScan, setLastScan] = useState<{ gameName: string; alreadyScanned: boolean } | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [manualUuid, setManualUuid] = useState("");
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
@@ -189,7 +187,7 @@ function App() {
     if (!supabase) return;
     const { data, error: scanError } = await supabase
       .from("scans")
-      .select("game_id, scanned_by, scanned_at")
+      .select("game_id, scanned_at")
       .eq("session_id", sessionId)
       .order("scanned_at", { ascending: false });
     if (scanError) throw scanError;
@@ -304,11 +302,22 @@ function App() {
     const reader = new BrowserMultiFormatReader();
     let active = true;
     void reader
-      .decodeFromVideoDevice(undefined, videoRef.current, (result) => {
-        if (result && active && !scanBusyRef.current) {
-          void recordScan(result.getText());
-        }
-      })
+      .decodeFromConstraints(
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        },
+        videoRef.current,
+        (result) => {
+          if (result && active && !scanBusyRef.current) {
+            void recordScan(result.getText());
+          }
+        },
+      )
       .then((controls) => {
         if (active) scannerControlsRef.current = controls;
         else controls.stop();
@@ -406,6 +415,24 @@ function App() {
     }
   }
 
+  async function deletePastSession(pastSession: ScanSession) {
+    if (!supabase || !authUser || !pastSession.saved_at) return;
+    if (!window.confirm(`Permanently delete session ${pastSession.code} and its scan results?`)) return;
+    setError("");
+    try {
+      const { error: deleteError } = await supabase
+        .from("scan_sessions")
+        .delete()
+        .eq("id", pastSession.id)
+        .not("saved_at", "is", null);
+      if (deleteError) throw deleteError;
+      setPastSessions((current) => current.filter((entry) => entry.id !== pastSession.id));
+      setNotice(`Session ${pastSession.code} deleted.`);
+    } catch (deleteError) {
+      setError(`Could not delete session: ${(deleteError as Error).message}`);
+    }
+  }
+
   async function updateGameCopies(game: Game, copies: number) {
     if (supabase && !authUser) {
       setAuthOpen(true);
@@ -461,6 +488,7 @@ function App() {
       }
       if (!created) throw new Error("Could not generate a unique join code. Please try again.");
       setSession(created);
+      setLastScan(null);
       setView("session");
       setNotice("Session created. Share the four-letter code with your players.");
     } catch (createError) {
@@ -513,6 +541,7 @@ function App() {
 
   function openPastSession(pastSession: ScanSession) {
     setSession(pastSession);
+    setLastScan(null);
     setView("session");
   }
 
@@ -585,6 +614,7 @@ function App() {
         return;
       }
       setSession(data);
+      setLastScan(null);
       setView("session");
       setNotice(`Joined session ${data.code}.`);
     } catch (joinError) {
@@ -601,6 +631,7 @@ function App() {
       return;
     }
     if (scannedIds.has(game.id)) {
+      setLastScan({ gameName: game.name, alreadyScanned: true });
       setNotice(`${game.name} has already been scanned in this session.`);
       return;
     }
@@ -611,14 +642,14 @@ function App() {
         {
           session_id: session.id,
           game_id: game.id,
-          scanned_by: playerName.trim() || "Player",
         },
         { onConflict: "session_id,game_id", ignoreDuplicates: true },
       );
       if (insertError) throw insertError;
-      await refreshScans(session.id);
+      setLastScan({ gameName: game.name, alreadyScanned: false });
       setNotice(`${game.name} scanned.`);
       setManualUuid("");
+      await refreshScans(session.id);
     } catch (scanError) {
       setError(`Could not save scan: ${(scanError as Error).message}`);
     } finally {
@@ -650,11 +681,6 @@ function App() {
       void prepareQrCodes();
     }
   }, [view, games, qrImages]);
-
-  function savePlayerName(value: string) {
-    setPlayerName(value);
-    localStorage.setItem("tabletop-tracker-player", value);
-  }
 
   return (
     <div className="app-shell">
@@ -878,6 +904,13 @@ function App() {
                       <span>{pastSession.saved_at ? new Date(pastSession.saved_at).toLocaleString() : ""}</span>
                     </div>
                     <button className="button button-outline button-small" onClick={() => openPastSession(pastSession)} type="button">View</button>
+                    {authUser && (
+                      <button
+                        className="button button-danger button-small"
+                        onClick={() => void deletePastSession(pastSession)}
+                        type="button"
+                      >Delete</button>
+                    )}
                   </article>
                 ))}
               </div>
@@ -947,7 +980,6 @@ function App() {
                 <div className="scanner-panel">
                   <div className="scanner-topline">
                     <div><h3>Scan a game</h3></div>
-                    <div className="player-field"><label htmlFor="player-name">YOUR NAME</label><input id="player-name" maxLength={40} placeholder="Player" value={playerName} onChange={(event) => savePlayerName(event.target.value)} /></div>
                   </div>
                   {session.saved_at ? (
                     <p className="saved-session-note">This session is saved and read-only.</p>
@@ -957,6 +989,12 @@ function App() {
                       <button className="button button-light button-small camera-close" onClick={() => setScannerOpen(false)} type="button">Stop camera</button>
                     </div>
                   ) : <button className="button button-primary" disabled={!games.length} onClick={() => setScannerOpen(true)} type="button">Open camera</button>}
+                  {lastScan && (
+                    <div className={`scan-confirmation ${lastScan.alreadyScanned ? "scan-confirmation-repeat" : ""}`} role="status">
+                      <span className="scan-confirmation-icon">{lastScan.alreadyScanned ? "!" : "✓"}</span>
+                      <span>{lastScan.alreadyScanned ? "Already scanned" : "QR scanned"}: <strong>{lastScan.gameName}</strong></span>
+                    </div>
+                  )}
                   {!session.saved_at && <form className="manual-scan" onSubmit={(event) => { event.preventDefault(); void recordScan(manualUuid); }}>
                     <label htmlFor="manual-uuid">Or enter a game UUID</label>
                     <div className="input-action"><input id="manual-uuid" placeholder="Paste UUID here" value={manualUuid} onChange={(event) => setManualUuid(event.target.value)} /><button className="button button-outline button-small" disabled={!manualUuid.trim()} type="submit">Mark found</button></div>
@@ -971,7 +1009,7 @@ function App() {
                     <div className="list-heading"><h3>Found</h3><span className="list-count found-count">{scans.length}</span></div>
                     {scans.length ? <ul className="scan-list">{scans.map((scan) => {
                       const game = games.find((entry) => entry.id === scan.game_id);
-                      return game ? <li key={scan.game_id}><span className="scan-status found">✓</span><span>{game.name}{game.copies > 1 ? ` ×${game.copies}` : ""}<small> by {scan.scanned_by}</small></span></li> : null;
+                      return game ? <li key={scan.game_id}><span className="scan-status found">✓</span><span>{game.name}{game.copies > 1 ? ` ×${game.copies}` : ""}</span></li> : null;
                     })}</ul> : <p className="list-empty">No scans yet.</p>}
                   </div>
                 </div>

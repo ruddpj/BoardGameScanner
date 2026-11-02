@@ -53,6 +53,8 @@ a { color: inherit; }
 .button-small { min-height: 32px; padding: 0 11px; font-size: 10px; }
 .button-primary { color: #fff; background: #7548b9; }
 .button-primary:hover:not(:disabled) { background: #8758d1; }
+.button-danger { border-color: #673943; color: #f0a1aa; background: #2a1921; }
+.button-danger:hover:not(:disabled) { background: #3a202a; }
 .button-outline { border-color: #494054; color: #ded5ea; background: #211c2b; }
 .button-outline:hover:not(:disabled) { background: #2a2336; }
 .button-light { color: #332541; background: #eee7f8; }
@@ -119,6 +121,7 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
 .past-session-info strong { color: #e7e1ef; font-size: 11px; }
 .past-session-info span { color: #9c95aa; font-size: 10px; }
 .past-session-row .button { margin-left: auto; }
+.past-session-row .button + .button { margin-left: 0; }
 .code-input { max-width: 180px; margin-bottom: 7px; font-size: 18px; font-weight: 700; letter-spacing: 6px; text-align: center; text-transform: uppercase; }
 .session-board { max-width: 900px; margin: 0 auto 35px; }
 .session-banner { display: flex; align-items: center; gap: 22px; padding: 16px 19px; border: 1px solid #574173; border-radius: 8px; background: #251c33; color: white; }
@@ -132,14 +135,16 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
 .scanner-panel { margin-top: 14px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .scanner-topline { display: flex; justify-content: space-between; gap: 18px; margin-bottom: 15px; }
 .scanner-topline h3 { margin: 0; font-size: 14px; }
-.player-field { width: 165px; }
-.player-field label { font-size: 8px; }
-.player-field input { padding: 7px 9px; font-size: 10px; }
 .manual-scan { max-width: 480px; margin-top: 15px; }
 .manual-scan label { font-size: 9px; }
 .camera-wrap { position: relative; max-width: 480px; overflow: hidden; border-radius: 7px; background: #08070b; }
 .camera-feed { width: 100%; max-height: 340px; object-fit: cover; }
 .camera-close { position: absolute; top: 9px; right: 9px; }
+.scan-confirmation { display: flex; align-items: center; gap: 9px; max-width: 480px; margin-top: 12px; padding: 10px 12px; border: 1px solid #395c48; border-radius: 6px; background: #1c2a22; color: #a0d4ad; font-size: 11px; }
+.scan-confirmation strong { color: #d3f0d7; }
+.scan-confirmation-icon { width: 20px; height: 20px; display: grid; flex: 0 0 20px; place-items: center; border-radius: 50%; background: #294532; color: #b3e2bd; font-weight: 700; }
+.scan-confirmation-repeat { border-color: #5b4b30; background: #282116; color: #e1c48f; }
+.scan-confirmation-repeat .scan-confirmation-icon { background: #40321e; color: #e1c48f; }
 .scan-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
 .list-heading { display: flex; align-items: center; gap: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
 .list-heading h3 { margin: 0; font-size: 12px; }
@@ -180,7 +185,6 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .session-progress strong { font-size: 17px; }
   .session-progress strong span { font-size: 11px; }
   .scanner-topline { align-items: flex-start; flex-direction: column; }
-  .player-field { width: 100%; }
 }
 @media print {
   body { background: white; color: black; }

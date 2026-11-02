@@ -136,9 +136,14 @@ create policy "Authenticated can finish scan sessions"
   on public.scan_sessions for update to authenticated
   using (auth.uid() is not null and saved_at is null)
   with check (auth.uid() is not null and saved_at is not null);
+create policy "Authenticated can delete finished scan sessions"
+  on public.scan_sessions for delete to authenticated
+  using (auth.uid() is not null and saved_at is not null);
 
 revoke update on public.scan_sessions from anon, authenticated;
 grant update (saved_at) on public.scan_sessions to authenticated;
+revoke delete on public.scan_sessions from anon, authenticated;
+grant delete on public.scan_sessions to authenticated;
 
 create policy "Anyone can read scans"
   on public.scans for select to anon, authenticated
