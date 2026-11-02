@@ -50,7 +50,7 @@ a { color: inherit; }
 .muted, .section-description { color: var(--muted); font-size: 11px; }
 .collection-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 24px; align-items: start; }
 .game-list { border-top: 1px solid var(--line); }
-.game-row { min-height: 60px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+.game-row { min-height: 60px; display: grid; grid-template-columns: 34px minmax(0, 1fr) 146px 24px; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
 .game-initial { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #564269; border-radius: 7px; background: #30253f; color: #c7a6fa; font-size: 14px; font-weight: 700; }
 .initial-1 { background: #322747; color: #b9a2ed; }
 .initial-2 { background: #29263d; color: #a9a8e7; }
@@ -59,13 +59,13 @@ a { color: inherit; }
 .game-info { min-width: 0; display: grid; gap: 4px; }
 .game-info strong { overflow: hidden; color: #e7e1ef; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .game-info span { color: #948ba1; font-family: ui-monospace, monospace; font-size: 9px; }
-.copy-count-form { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.copy-count-form { width: 146px; display: grid; grid-template-columns: 34px 50px 44px; align-items: center; gap: 6px; }
 .copy-count-label { margin: 0; color: #a49bad; font-size: 9px; }
 .copy-count-form input { width: 52px; padding: 6px; text-align: center; }
-.copy-count-form .button { min-height: 28px; padding: 0 8px; }
+.copy-count-form .button { width: 44px; min-height: 28px; padding: 0 5px; }
 .schema-warning { margin: -5px 0 16px; padding: 10px 12px; border: 1px solid #5b4b30; border-radius: 6px; background: #282116; color: #e1c48f; font-size: 11px; line-height: 1.5; }
 .schema-warning a { color: #d3b5ff; }
-.icon-button { margin-left: auto; padding: 4px 8px; border: 0; background: none; color: #938b9e; font-size: 18px; }
+.icon-button { margin-left: 0; padding: 4px 8px; border: 0; background: none; color: #938b9e; font-size: 18px; }
 .icon-button:hover { color: #f1849b; }
 .add-panel { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .panel-title { display: flex; align-items: center; margin-bottom: 16px; }
@@ -154,8 +154,8 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .tabs > .button { padding: 0 9px; font-size: 9px; }
   .collection-layout { grid-template-columns: 1fr; }
   .add-panel { order: -1; }
-  .game-row { gap: 8px; }
-  .copy-count-form { gap: 4px; }
+  .game-row { grid-template-columns: 34px minmax(0, 1fr) 146px 24px; gap: 6px; }
+  .copy-count-form { gap: 6px; }
   .copy-count-label { display: none; }
   .session-options, .scan-lists { grid-template-columns: 1fr; }
   .session-options { margin-top: 14px; }
