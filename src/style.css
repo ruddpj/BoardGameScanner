@@ -154,6 +154,10 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
 .found-count { background: #203328; color: #9bd0a7; }
 .scan-list { margin: 0; padding: 0; list-style: none; }
 .scan-list li { display: flex; align-items: flex-start; gap: 9px; padding: 9px 2px; border-bottom: 1px solid #2a2532; color: #d5cedf; font-size: 10px; }
+.scan-list li.session-game-row { align-items: center; flex-wrap: wrap; }
+.session-game-name { flex: 1 1 130px; }
+.session-game-actions { display: flex; align-items: center; gap: 5px; }
+.session-game-actions .button { min-width: 29px; padding: 0 7px; }
 .scan-status { flex: 0 0 14px; width: 14px; height: 14px; display: grid; place-items: center; margin-top: -1px; border: 1px solid #50495a; border-radius: 50%; }
 .scan-status.found { border: 0; background: #294532; color: #a5d6ae; font-size: 9px; }
 .scan-list small { display: block; margin-top: 3px; color: #9e95a8; font-size: 9px; }

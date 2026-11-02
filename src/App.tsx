@@ -670,6 +670,59 @@ function App() {
     }
   }
 
+  async function changeSavedScanCount(game: Game, delta: number) {
+    if (!supabase || !authUser || !session?.saved_at || scanBusyRef.current) return;
+    const gameScans = scans.filter((scan) => scan.game_id === game.id);
+    if (delta < 0 && !gameScans.length) return;
+    scanBusyRef.current = true;
+    setError("");
+    try {
+      if (delta > 0) {
+        const { error: insertError } = await supabase.from("scans").insert(
+          Array.from({ length: delta }, () => ({
+            session_id: session.id,
+            game_id: game.id,
+          })),
+        );
+        if (insertError) throw insertError;
+      } else {
+        const { error: deleteError } = await supabase
+          .from("scans")
+          .delete()
+          .eq("session_id", session.id)
+          .eq("id", gameScans[0].id);
+        if (deleteError) throw deleteError;
+      }
+      await refreshScans(session.id);
+      setNotice(`${game.name} count updated.`);
+    } catch (scanError) {
+      setError(`Could not update saved session: ${(scanError as Error).message}`);
+    } finally {
+      scanBusyRef.current = false;
+    }
+  }
+
+  async function removeGameFromSavedSession(game: Game) {
+    if (!supabase || !authUser || !session?.saved_at || scanBusyRef.current) return;
+    if (!window.confirm(`Remove all ${scansByGame.get(game.id) ?? 0} scans of "${game.name}" from this session?`)) return;
+    scanBusyRef.current = true;
+    setError("");
+    try {
+      const { error: deleteError } = await supabase
+        .from("scans")
+        .delete()
+        .eq("session_id", session.id)
+        .eq("game_id", game.id);
+      if (deleteError) throw deleteError;
+      await refreshScans(session.id);
+      setNotice(`${game.name} removed from the session.`);
+    } catch (scanError) {
+      setError(`Could not remove game from saved session: ${(scanError as Error).message}`);
+    } finally {
+      scanBusyRef.current = false;
+    }
+  }
+
   async function captureAndScan() {
     if (capturingPhoto || scanBusyRef.current) return;
     const video = videoRef.current;
@@ -1024,7 +1077,11 @@ function App() {
                     <div><h3>Scan a game</h3></div>
                   </div>
                   {session.saved_at ? (
-                    <p className="saved-session-note">This session is saved and read-only.</p>
+                    <p className="saved-session-note">
+                      {authUser
+                        ? "Finished session. Adjust game counts below; signed-in managers can add or remove games."
+                        : "This session is finished and read-only. Sign in to edit its games."}
+                    </p>
                   ) : scannerOpen ? (
                     <>
                       <div className="camera-wrap">
@@ -1059,10 +1116,37 @@ function App() {
                     })}</ul> : <p className="list-empty">No unscanned games.</p>}
                   </div>
                   <div>
-                    <div className="list-heading"><h3>Found</h3><span className="list-count found-count">{scans.length}</span></div>
-                    {scans.length ? <ul className="scan-list">{games.filter((game) => scansByGame.has(game.id)).map((game) => {
+                    <div className="list-heading"><h3>{session.saved_at && authUser ? "Session games" : "Found"}</h3><span className="list-count found-count">{scans.length}</span></div>
+                    {(session.saved_at && authUser ? games : games.filter((game) => scansByGame.has(game.id))).length ? <ul className="scan-list">{(session.saved_at && authUser ? games : games.filter((game) => scansByGame.has(game.id))).map((game) => {
                       const scannedCopies = scansByGame.get(game.id) ?? 0;
-                      return <li key={game.id}><span className="scan-status found">✓</span><span>{game.name}<small>{scannedCopies} scan{scannedCopies === 1 ? "" : "s"} logged · {game.copies} listed {game.copies === 1 ? "copy" : "copies"}</small></span></li>;
+                      return <li className={session.saved_at && authUser ? "session-game-row" : ""} key={game.id}>
+                        <span className={`scan-status ${scannedCopies ? "found" : "pending"}`}>{scannedCopies ? "✓" : ""}</span>
+                        <span className="session-game-name">{game.name}<small>{scannedCopies} scan{scannedCopies === 1 ? "" : "s"} logged · {game.copies} listed {game.copies === 1 ? "copy" : "copies"}</small></span>
+                        {session.saved_at && authUser && (
+                          <div className="session-game-actions" aria-label={`${game.name} scan count`}>
+                            <button
+                              className="button button-outline button-small"
+                              disabled={!scannedCopies}
+                              onClick={() => void changeSavedScanCount(game, -1)}
+                              title="Remove one scan"
+                              type="button"
+                            >−</button>
+                            <button
+                              className="button button-outline button-small"
+                              onClick={() => void changeSavedScanCount(game, 1)}
+                              title="Add one scan"
+                              type="button"
+                            >+</button>
+                            {scannedCopies > 0 && (
+                              <button
+                                className="button button-danger button-small"
+                                onClick={() => void removeGameFromSavedSession(game)}
+                                type="button"
+                              >Remove</button>
+                            )}
+                          </div>
+                        )}
+                      </li>;
                     })}</ul> : <p className="list-empty">No scans yet.</p>}
                   </div>
                 </div>

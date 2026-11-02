@@ -67,6 +67,22 @@ as $$
 declare
   session_saved_at timestamptz;
 begin
+  if tg_op = 'DELETE' then
+    if pg_trigger_depth() > 1 then
+      return old;
+    end if;
+
+    select saved_at into session_saved_at
+    from public.scan_sessions
+    where id = old.session_id;
+
+    if session_saved_at is not null and auth.uid() is not null then
+      return old;
+    end if;
+
+    raise exception 'Scans can only be removed from a finished session by a signed-in manager';
+  end if;
+
   if tg_op = 'UPDATE' then
     select saved_at into session_saved_at
     from public.scan_sessions
@@ -81,8 +97,8 @@ begin
   from public.scan_sessions
   where id = new.session_id;
 
-  if session_saved_at is not null then
-    raise exception 'Scans cannot be changed after a session is saved';
+  if session_saved_at is not null and auth.uid() is null then
+    raise exception 'Only a signed-in manager can add scans to a finished session';
   end if;
 
   return new;
@@ -91,7 +107,7 @@ $$;
 
 drop trigger if exists prevent_scans_in_saved_sessions on public.scans;
 create trigger prevent_scans_in_saved_sessions
-  before insert or update on public.scans
+  before insert or update or delete on public.scans
   for each row execute function public.prevent_scans_in_saved_sessions();
 
 create or replace function public.prevent_saved_session_changes()
@@ -190,6 +206,32 @@ create policy "Anyone can add scans to active sessions"
         and scan_sessions.saved_at is null
     )
   );
+create policy "Authenticated can edit finished sessions"
+  on public.scans for insert to authenticated
+  with check (
+    auth.uid() is not null
+    and exists (
+      select 1
+      from public.scan_sessions
+      where scan_sessions.id = scans.session_id
+        and scan_sessions.saved_at is not null
+    )
+  );
+create policy "Authenticated can remove scans from finished sessions"
+  on public.scans for delete to authenticated
+  using (
+    auth.uid() is not null
+    and exists (
+      select 1
+      from public.scan_sessions
+      where scan_sessions.id = scans.session_id
+        and scan_sessions.saved_at is not null
+    )
+  );
+
+revoke update, delete on public.scans from anon, authenticated;
+grant select, insert on public.scans to anon, authenticated;
+grant delete on public.scans to authenticated;
 
 do $$
 begin
