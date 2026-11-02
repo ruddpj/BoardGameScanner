@@ -3,8 +3,12 @@ create extension if not exists pgcrypto;
 create table if not exists public.games (
   id uuid primary key default gen_random_uuid(),
   name text not null check (length(trim(name)) > 0),
+  copies integer not null default 1 check (copies >= 1),
   created_at timestamptz not null default now()
 );
+
+alter table public.games
+  add column if not exists copies integer not null default 1 check (copies >= 1);
 
 create table if not exists public.scan_sessions (
   id uuid primary key default gen_random_uuid(),

@@ -3,7 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type Game = { id: string; name: string };
+type Game = { id: string; name: string; copies: number };
 type ScanSession = { id: string; code: string; created_at: string };
 type Scan = { game_id: string; scanned_by: string; scanned_at: string };
 type View = "collection" | "labels" | "session";
@@ -58,10 +58,16 @@ function readLocalGames(): Game[] {
       stored.every(
         (game) =>
           typeof game.id === "string" &&
-          typeof game.name === "string",
+          typeof game.name === "string" &&
+          (game.copies === undefined ||
+            (Number.isInteger(game.copies) && game.copies >= 1)),
       )
     ) {
-      return stored as Game[];
+      return stored.map((game) => ({
+        id: game.id,
+        name: game.name,
+        copies: game.copies ?? 1,
+      }));
     }
   } catch {
     console.warn("Could not read the locally saved game list.");
@@ -81,6 +87,7 @@ function App() {
   const [notice, setNotice] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [bulkInput, setBulkInput] = useState("");
+  const [copyDrafts, setCopyDrafts] = useState<Record<string, string>>({});
   const [session, setSession] = useState<ScanSession | null>(null);
   const [sessionInput, setSessionInput] = useState("");
   const [playerName, setPlayerName] = useState(
@@ -107,7 +114,7 @@ function App() {
     }
     const { data, error: loadError } = await supabase
       .from("games")
-      .select("id, name")
+      .select("id, name, copies")
       .order("name");
     if (loadError) throw loadError;
     setGames(data ?? []);
@@ -215,7 +222,7 @@ function App() {
     const existing = new Set(games.map((game) => game.name.toLocaleLowerCase()));
     const additions = normalized
       .filter((name) => !existing.has(name.toLocaleLowerCase()))
-      .map((name) => ({ id: makeUuid(), name }));
+      .map((name) => ({ id: makeUuid(), name, copies: 1 }));
     if (!additions.length) {
       setNotice("Those games are already in your collection.");
       return;
@@ -266,6 +273,30 @@ function App() {
       setNotice(`${game.name} removed.`);
     } catch (deleteError) {
       setError(`Could not remove game: ${(deleteError as Error).message}`);
+    }
+  }
+
+  async function updateGameCopies(game: Game, copies: number) {
+    setError("");
+    try {
+      if (supabase) {
+        const { error: updateError } = await supabase
+          .from("games")
+          .update({ copies })
+          .eq("id", game.id);
+        if (updateError) throw updateError;
+      }
+      setGames((current) =>
+        current.map((entry) => (entry.id === game.id ? { ...entry, copies } : entry)),
+      );
+      setCopyDrafts((current) => {
+        const remainingDrafts = { ...current };
+        delete remainingDrafts[game.id];
+        return remainingDrafts;
+      });
+      setNotice(`${game.name}: copy count updated to ${copies}.`);
+    } catch (updateError) {
+      setError(`Could not update copy count: ${(updateError as Error).message}`);
     }
   }
 
@@ -456,6 +487,36 @@ function App() {
                         <strong>{game.name}</strong>
                         <span>UUID · {game.id.slice(0, 8)}…</span>
                       </div>
+                      <form className="copy-count-form" onSubmit={(event) => {
+                        event.preventDefault();
+                        const input = new FormData(event.currentTarget).get("copies");
+                        const copies = Number(input);
+                        if (!Number.isInteger(copies) || copies < 1) {
+                          setError("Copy count must be a whole number greater than zero.");
+                          return;
+                        }
+                        if (copies !== game.copies) void updateGameCopies(game, copies);
+                      }}>
+                        <label className="copy-count-label" htmlFor={`copies-${game.id}`}>Copies</label>
+                        <input
+                          id={`copies-${game.id}`}
+                          aria-label={`Copies of ${game.name}`}
+                          name="copies"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={copyDrafts[game.id] ?? String(game.copies)}
+                          onChange={(event) => setCopyDrafts((current) => ({
+                            ...current,
+                            [game.id]: event.target.value,
+                          }))}
+                        />
+                        <button
+                          className="button button-outline button-small"
+                          disabled={(copyDrafts[game.id] ?? String(game.copies)) === String(game.copies)}
+                          type="submit"
+                        >Save</button>
+                      </form>
                       <button className="icon-button" onClick={() => void removeGame(game)} title={`Remove ${game.name}`} type="button">×</button>
                     </article>
                   ))
@@ -565,13 +626,13 @@ function App() {
                 <div className="scan-lists">
                   <div>
                     <div className="list-heading"><h3>Still on the shelf</h3><span className="list-count remaining-count">{remaining.length}</span></div>
-                    {remaining.length ? <ul className="scan-list">{remaining.map((game) => <li key={game.id}><span className="scan-status pending" /><span>{game.name}</span></li>)}</ul> : <p className="list-empty">No unscanned games.</p>}
+                    {remaining.length ? <ul className="scan-list">{remaining.map((game) => <li key={game.id}><span className="scan-status pending" /><span>{game.name}{game.copies > 1 ? ` ×${game.copies}` : ""}</span></li>)}</ul> : <p className="list-empty">No unscanned games.</p>}
                   </div>
                   <div>
                     <div className="list-heading"><h3>Found</h3><span className="list-count found-count">{scans.length}</span></div>
                     {scans.length ? <ul className="scan-list">{scans.map((scan) => {
                       const game = games.find((entry) => entry.id === scan.game_id);
-                      return game ? <li key={scan.game_id}><span className="scan-status found">✓</span><span>{game.name}<small> by {scan.scanned_by}</small></span></li> : null;
+                      return game ? <li key={scan.game_id}><span className="scan-status found">✓</span><span>{game.name}{game.copies > 1 ? ` ×${game.copies}` : ""}<small> by {scan.scanned_by}</small></span></li> : null;
                     })}</ul> : <p className="list-empty">No scans yet.</p>}
                   </div>
                 </div>

@@ -59,6 +59,10 @@ a { color: inherit; }
 .game-info { min-width: 0; display: grid; gap: 4px; }
 .game-info strong { overflow: hidden; color: #e7e1ef; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .game-info span { color: #948ba1; font-family: ui-monospace, monospace; font-size: 9px; }
+.copy-count-form { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.copy-count-label { margin: 0; color: #a49bad; font-size: 9px; }
+.copy-count-form input { width: 52px; padding: 6px; text-align: center; }
+.copy-count-form .button { min-height: 28px; padding: 0 8px; }
 .icon-button { margin-left: auto; padding: 4px 8px; border: 0; background: none; color: #938b9e; font-size: 18px; }
 .icon-button:hover { color: #f1849b; }
 .add-panel { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
@@ -138,6 +142,9 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .tabs > .button { padding: 0 9px; font-size: 9px; }
   .collection-layout { grid-template-columns: 1fr; }
   .add-panel { order: -1; }
+  .game-row { gap: 8px; }
+  .copy-count-form { gap: 4px; }
+  .copy-count-label { display: none; }
   .session-options, .scan-lists { grid-template-columns: 1fr; }
   .session-options { margin-top: 14px; }
   .session-banner { gap: 11px; padding: 13px; }
