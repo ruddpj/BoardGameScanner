@@ -1080,7 +1080,8 @@ function App() {
                 {games.map((game) => (
                   <article className="qr-card" key={game.id}>
                     {qrImages[game.id] ? <img src={qrImages[game.id]} alt={`QR code for ${game.name}`} /> : <div className="qr-placeholder">Creating code…</div>}
-                    <strong className="qr-game-name">{game.name}</strong>
+                    <strong>{game.name}</strong>
+                    <code>{game.id}</code>
                     <button className="button button-outline button-small" disabled={!qrImages[game.id]} onClick={() => {
                       const link = document.createElement("a");
                       link.href = qrImages[game.id];

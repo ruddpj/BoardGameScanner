@@ -203,10 +203,9 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .app-shell { max-width: none; padding: 0; }
   .topbar, .tabs, .section-heading .button, .feedback { display: none !important; }
   .workspace { padding: 0; }
-  .qr-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .qr-card { break-inside: avoid; padding: 8px; border: 0; border-radius: 0; background: white; color: black; }
-  .qr-card img { width: min(100%, 2.8in); height: auto; margin: 0 0 4px; border: 0; }
-  .qr-card strong, .qr-card .qr-game-name { max-width: 100%; color: black; font-size: 8pt; font-weight: 400; line-height: 1.15; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
-  .qr-placeholder { display: none; }
+  .qr-grid { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .qr-card { break-inside: avoid; border: 1px solid #bbb; background: white; color: black; }
+  .qr-card img { border: 1px solid #ddd; }
+  .qr-card strong, .qr-card code { color: black; }
   .qr-card .button { display: none; }
 }
