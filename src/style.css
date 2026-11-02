@@ -201,7 +201,7 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
 @media print {
   body { background: white; color: black; }
   .app-shell { max-width: none; padding: 0; }
-  .topbar, .tabs, .section-heading .button, .feedback { display: none !important; }
+  .topbar, .tabs, .section-heading, .feedback { display: none !important; }
   .workspace { padding: 0; }
   .qr-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .qr-card { break-inside: avoid; padding: 8px; border: 0; border-radius: 0; background: white; color: black; }
