@@ -71,12 +71,7 @@ a { color: inherit; }
 .muted, .section-description { color: var(--muted); font-size: 11px; }
 .collection-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 24px; align-items: start; }
 .game-list { border-top: 1px solid var(--line); }
-.game-row { min-height: 60px; display: grid; grid-template-columns: 34px minmax(0, 1fr) 146px 24px; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
-.game-initial { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #564269; border-radius: 7px; background: #30253f; color: #c7a6fa; font-size: 14px; font-weight: 700; }
-.initial-1 { background: #322747; color: #b9a2ed; }
-.initial-2 { background: #29263d; color: #a9a8e7; }
-.initial-3 { background: #39243a; color: #d59bd5; }
-.initial-4 { background: #30273d; color: #d2a8ef; }
+.game-row { min-height: 60px; display: grid; grid-template-columns: minmax(0, 1fr) 146px 24px; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
 .game-info { min-width: 0; display: grid; gap: 4px; }
 .game-info strong { overflow: hidden; color: #e7e1ef; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .game-info span { color: #948ba1; font-family: ui-monospace, monospace; font-size: 9px; overflow-wrap: anywhere; }
@@ -189,7 +184,7 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .tabs > .button { padding: 0 9px; font-size: 9px; }
   .collection-layout { grid-template-columns: 1fr; }
   .add-panel { order: -1; }
-  .game-row { grid-template-columns: 30px minmax(0, 1fr) 102px 18px; gap: 5px; }
+  .game-row { grid-template-columns: minmax(0, 1fr) 102px 18px; gap: 5px; }
   .game-copy-actions { width: 102px; gap: 4px; }
   .session-options, .scan-lists { grid-template-columns: 1fr; }
   .session-options { margin-top: 14px; }

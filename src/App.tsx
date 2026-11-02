@@ -1082,12 +1082,11 @@ function App() {
                     <h3>No games</h3>
                   </div>
                 ) : (
-                  games.map((game, index) => (
+                  games.map((game) => (
                     <article className="game-row" key={game.id}>
-                      <div className={`game-initial initial-${index % 5}`}>{game.name.trim()[0]?.toUpperCase() ?? "?"}</div>
                       <div className="game-info">
                         <strong>{game.name}</strong>
-                        <span>UUID · {game.id}</span>
+                        <span>{game.id}</span>
                       </div>
                       <div className="game-copy-actions">
                         <span className="copy-count-readonly" aria-label={`${game.copies} copies`}>{game.copies}×</span>
