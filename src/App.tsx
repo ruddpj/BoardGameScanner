@@ -7,6 +7,8 @@ type Game = { id: string; name: string; copies: number };
 type ScanSession = { id: string; code: string; created_at: string; saved_at?: string | null };
 type Scan = { game_id: string; scanned_at: string };
 type View = "collection" | "labels" | "session" | "past-sessions";
+type FocusModeCapabilities = MediaTrackCapabilities & { focusMode?: string[] };
+type FocusModeConstraints = MediaTrackConstraints & { focusMode?: ConstrainDOMString };
 
 const storageKey = "tabletop-tracker-games";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -300,16 +302,18 @@ function App() {
   useEffect(() => {
     if (!scannerOpen || !videoRef.current) return;
     const reader = new BrowserMultiFormatReader();
+    const cameraVideoConstraints: FocusModeConstraints = {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      focusMode: { ideal: "continuous" },
+    };
     let active = true;
     void reader
       .decodeFromConstraints(
         {
           audio: false,
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
+          video: cameraVideoConstraints,
         },
         videoRef.current,
         (result) => {
@@ -321,6 +325,17 @@ function App() {
       .then((controls) => {
         if (active) scannerControlsRef.current = controls;
         else controls.stop();
+        const videoTrack = videoRef.current?.srcObject instanceof MediaStream
+          ? videoRef.current.srcObject.getVideoTracks()[0]
+          : undefined;
+        const focusModes = videoTrack?.getCapabilities() as FocusModeCapabilities | undefined;
+        if (active && videoTrack && focusModes?.focusMode?.includes("continuous")) {
+          void videoTrack.applyConstraints({
+            focusMode: { ideal: "continuous" },
+          } as FocusModeConstraints).catch((focusError: Error) => {
+            if (active) setError(`Could not enable camera autofocus: ${focusError.message}`);
+          });
+        }
       })
       .catch((cameraError: Error) => {
         if (active) setError(`Could not start camera: ${cameraError.message}`);
