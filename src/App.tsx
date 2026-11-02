@@ -764,7 +764,7 @@ function App() {
                   {session.saved_at ? (
                     <span className="saved-badge">Saved {new Date(session.saved_at).toLocaleString()}</span>
                   ) : (
-                    <button className="button button-primary button-small" onClick={() => void saveSession()} type="button">Save session</button>
+                    <button className="button button-primary button-small" onClick={() => void saveSession()} type="button">Finish session</button>
                   )}
                   <button className="button button-outline button-small" onClick={() => { setSession(null); setScans([]); setView("past-sessions"); }} type="button">
                     {session.saved_at ? "Back to past sessions" : "Leave session"}

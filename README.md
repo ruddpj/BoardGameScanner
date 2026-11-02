@@ -22,7 +22,7 @@ Without Supabase configuration, the catalog is stored locally in the current bro
 - Open **QR codes** to generate an individual label or every label in the catalog; use **Print** for a printable sheet.
 - Create a scan session and share its four-letter join code. Other players open the same site, enter the code, and choose a player name.
 - Scan a label with the device camera, or paste a UUID into the manual scan field. The session updates live and shows scanned and remaining games.
-- Select **Save session** when scanning is finished. Saved sessions become read-only and can be reopened from **Past sessions**.
+- Select **Finish session** when scanning is finished. Saved sessions become read-only and can be reopened from **Past sessions**.
 
 QR codes contain the game's UUID, not its name, so labels remain unique even when games have similar names.
 
