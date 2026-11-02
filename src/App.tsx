@@ -50,6 +50,14 @@ function configureSupabase(
 const supabaseConfiguration = configureSupabase(supabaseUrl, supabaseKey);
 const supabase = supabaseConfiguration.client;
 
+function isMissingCopiesColumn(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column games\.copies does not exist/i.test(error.message ?? "")
+  );
+}
+
 function readLocalGames(): Game[] {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
@@ -88,6 +96,7 @@ function App() {
   const [nameInput, setNameInput] = useState("");
   const [bulkInput, setBulkInput] = useState("");
   const [copyDrafts, setCopyDrafts] = useState<Record<string, string>>({});
+  const [copyCountsAvailable, setCopyCountsAvailable] = useState(true);
   const [session, setSession] = useState<ScanSession | null>(null);
   const [sessionInput, setSessionInput] = useState("");
   const [playerName, setPlayerName] = useState(
@@ -116,7 +125,18 @@ function App() {
       .from("games")
       .select("id, name, copies")
       .order("name");
+    if (loadError && isMissingCopiesColumn(loadError)) {
+      setCopyCountsAvailable(false);
+      const { data: legacyData, error: legacyError } = await supabase
+        .from("games")
+        .select("id, name")
+        .order("name");
+      if (legacyError) throw legacyError;
+      setGames((legacyData ?? []).map((game) => ({ ...game, copies: 1 })));
+      return;
+    }
     if (loadError) throw loadError;
+    setCopyCountsAvailable(true);
     setGames(data ?? []);
   }, []);
 
@@ -229,7 +249,15 @@ function App() {
     }
     if (supabase) {
       const { error: insertError } = await supabase.from("games").insert(additions);
-      if (insertError) throw insertError;
+      if (insertError && isMissingCopiesColumn(insertError)) {
+        setCopyCountsAvailable(false);
+        const { error: legacyInsertError } = await supabase
+          .from("games")
+          .insert(additions.map(({ id, name }) => ({ id, name })));
+        if (legacyInsertError) throw legacyInsertError;
+      } else if (insertError) {
+        throw insertError;
+      }
       await refreshGames();
     } else {
       setGames((current) =>
@@ -473,6 +501,13 @@ function App() {
               </div>
               {loadingGames && <span className="muted">Loading…</span>}
             </div>
+            {!copyCountsAvailable && (
+              <div className="schema-warning" role="status">
+                Copy counts are not enabled in the database yet. Run the updated{" "}
+                <a href="https://github.com/ruddpj/BoardGameScanner/blob/main/supabase/schema.sql" target="_blank" rel="noreferrer">Supabase schema</a>
+                {" "}to edit counts. Existing games remain available and default to one copy.
+              </div>
+            )}
             <div className="collection-layout">
               <div className="game-list">
                 {games.length === 0 && !loadingGames ? (
@@ -505,6 +540,7 @@ function App() {
                           type="number"
                           min="1"
                           step="1"
+                          disabled={!copyCountsAvailable}
                           value={copyDrafts[game.id] ?? String(game.copies)}
                           onChange={(event) => setCopyDrafts((current) => ({
                             ...current,
@@ -513,7 +549,7 @@ function App() {
                         />
                         <button
                           className="button button-outline button-small"
-                          disabled={(copyDrafts[game.id] ?? String(game.copies)) === String(game.copies)}
+                          disabled={!copyCountsAvailable || (copyDrafts[game.id] ?? String(game.copies)) === String(game.copies)}
                           type="submit"
                         >Save</button>
                       </form>

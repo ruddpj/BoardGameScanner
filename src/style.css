@@ -63,6 +63,8 @@ a { color: inherit; }
 .copy-count-label { margin: 0; color: #a49bad; font-size: 9px; }
 .copy-count-form input { width: 52px; padding: 6px; text-align: center; }
 .copy-count-form .button { min-height: 28px; padding: 0 8px; }
+.schema-warning { margin: -5px 0 16px; padding: 10px 12px; border: 1px solid #5b4b30; border-radius: 6px; background: #282116; color: #e1c48f; font-size: 11px; line-height: 1.5; }
+.schema-warning a { color: #d3b5ff; }
 .icon-button { margin-left: auto; padding: 4px 8px; border: 0; background: none; color: #938b9e; font-size: 18px; }
 .icon-button:hover { color: #f1849b; }
 .add-panel { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
