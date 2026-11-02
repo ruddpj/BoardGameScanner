@@ -8,10 +8,11 @@ type ScanSession = { id: string; code: string; created_at: string; saved_at?: st
 type Scan = { id: string; game_id: string; scanned_at: string };
 type View = "collection" | "labels" | "session" | "past-sessions";
 type FocusModeCapabilities = MediaTrackCapabilities & { focusMode?: string[] };
-type FocusModeConstraints = MediaTrackConstraints & { focusMode?: ConstrainDOMString };
-type ZoomCapabilities = MediaTrackCapabilities & { zoom?: DoubleRange };
-type ZoomConstraintSet = MediaTrackConstraintSet & { zoom?: ConstrainDouble };
-type ZoomConstraints = MediaTrackConstraints & { advanced?: ZoomConstraintSet[] };
+type FocusModeConstraintSet = MediaTrackConstraintSet & { focusMode?: ConstrainDOMString };
+type FocusModeConstraints = MediaTrackConstraints & {
+  focusMode?: ConstrainDOMString;
+  advanced?: FocusModeConstraintSet[];
+};
 
 const storageKey = "tabletop-tracker-games";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -124,9 +125,11 @@ function App() {
   const [authError, setAuthError] = useState("");
   const [scans, setScans] = useState<Scan[]>([]);
   const [lastScan, setLastScan] = useState<{ gameName: string; alreadyScanned: boolean } | null>(null);
+  const [detectedGame, setDetectedGame] = useState<Game | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
-  const [cameraZoom, setCameraZoom] = useState<{ min: number; max: number; step: number; value: number } | null>(null);
+  const [cameraResolution, setCameraResolution] = useState("");
+  const [addingScan, setAddingScan] = useState(false);
   const [manualUuid, setManualUuid] = useState("");
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
   const [creatingSession, setCreatingSession] = useState(false);
@@ -134,7 +137,8 @@ function App() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
   const scanBusyRef = useRef(false);
-  const recordScanRef = useRef<(rawValue: string) => void>(() => {});
+  const gamesRef = useRef(games);
+  gamesRef.current = games;
   const scansByGame = useMemo(
     () => scans.reduce((counts, scan) => {
       counts.set(scan.game_id, (counts.get(scan.game_id) ?? 0) + 1);
@@ -316,8 +320,9 @@ function App() {
     if (!scannerOpen || !videoRef.current) return;
     const cameraVideoConstraints: FocusModeConstraints = {
       facingMode: { ideal: "environment" },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
+      width: { ideal: 3840 },
+      height: { ideal: 2160 },
+      frameRate: { ideal: 30 },
       focusMode: { ideal: "continuous" },
     };
     let active = true;
@@ -335,40 +340,40 @@ function App() {
         videoRef.current!.srcObject = stream;
         await videoRef.current!.play();
         const videoTrack = stream.getVideoTracks()[0];
-        const focusModes = videoTrack?.getCapabilities() as FocusModeCapabilities | undefined;
+        const videoCapabilities = videoTrack && typeof videoTrack.getCapabilities === "function"
+          ? videoTrack.getCapabilities()
+          : undefined;
+        const targetWidth = Math.min(videoCapabilities?.width?.max ?? 3840, 3840);
+        const targetHeight = Math.min(videoCapabilities?.height?.max ?? 2160, 2160);
+        if (videoTrack) {
+          await videoTrack.applyConstraints({
+            width: { ideal: targetWidth },
+            height: { ideal: targetHeight },
+          }).catch((resolutionError: Error) => {
+            if (active) setError(`Could not select the highest camera resolution: ${resolutionError.message}`);
+          });
+          const settings = videoTrack.getSettings();
+          setCameraResolution(
+            settings.width && settings.height
+              ? `${settings.width} × ${settings.height}`
+              : "",
+          );
+        }
+        const focusModes = videoCapabilities as FocusModeCapabilities | undefined;
         if (videoTrack && focusModes?.focusMode?.includes("continuous")) {
           await videoTrack.applyConstraints({
-            focusMode: { ideal: "continuous" },
+            advanced: [{ focusMode: "continuous" }],
           } as FocusModeConstraints).catch((focusError: Error) => {
             if (active) setError(`Could not enable continuous autofocus: ${focusError.message}`);
           });
         }
-        const zoom = (videoTrack?.getCapabilities() as ZoomCapabilities | undefined)?.zoom;
-        if (zoom?.min !== undefined && zoom.max !== undefined && zoom.max > zoom.min) {
-          setCameraZoom({
-            min: zoom.min,
-            max: zoom.max,
-            step: (zoom.max - zoom.min) / 20,
-            value: videoTrack?.getSettings().zoom ?? zoom.min,
-          });
-        } else {
-          setCameraZoom(null);
-        }
-        let lastDecodedText: string | null = null;
-        let lastSeenAt = 0;
         const reader = new BrowserMultiFormatReader();
         void reader.decodeFromVideoElement(videoRef.current!, (result) => {
           if (!active) return;
-          const now = Date.now();
-          if (!result) {
-            if (now - lastSeenAt > 1200) lastDecodedText = null;
-            return;
-          }
-          lastSeenAt = now;
-          const decodedText = result.getText();
-          if (scanBusyRef.current || decodedText === lastDecodedText) return;
-          lastDecodedText = decodedText;
-          recordScanRef.current(decodedText);
+          if (!result) return;
+          const decodedText = result.getText().trim().toLowerCase();
+          const game = gamesRef.current.find((entry) => entry.id.toLowerCase() === decodedText) ?? null;
+          setDetectedGame((current) => current?.id === game?.id ? current : game);
         }).then((controls) => {
           if (active) {
             scannerControlsRef.current = controls;
@@ -386,7 +391,8 @@ function App() {
     return () => {
       active = false;
       setCameraReady(false);
-      setCameraZoom(null);
+      setCameraResolution("");
+      setDetectedGame(null);
       scannerControlsRef.current?.stop();
       scannerControlsRef.current = null;
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -696,6 +702,7 @@ function App() {
     }
     const alreadyScanned = (scansByGame.get(game.id) ?? 0) > 0;
     scanBusyRef.current = true;
+    setAddingScan(true);
     setError("");
     try {
       const { error: insertError } = await supabase.from("scans").insert({
@@ -711,12 +718,9 @@ function App() {
       setError(`Could not save scan: ${(scanError as Error).message}`);
     } finally {
       scanBusyRef.current = false;
+      setAddingScan(false);
     }
   }
-
-  recordScanRef.current = (rawValue) => {
-    void recordScan(rawValue);
-  };
 
   async function changeSavedScanCount(game: Game, delta: number) {
     if (!supabase || !authUser || !session?.saved_at || scanBusyRef.current) return;
@@ -768,19 +772,6 @@ function App() {
       setError(`Could not remove game from saved session: ${(scanError as Error).message}`);
     } finally {
       scanBusyRef.current = false;
-    }
-  }
-
-  async function changeCameraZoom(value: number) {
-    const videoTrack = cameraStreamRef.current?.getVideoTracks()[0];
-    if (!videoTrack) return;
-    try {
-      await videoTrack.applyConstraints({
-        advanced: [{ zoom: value }],
-      } as ZoomConstraints);
-      setCameraZoom((current) => current ? { ...current, value } : current);
-    } catch (zoomError) {
-      setError(`Could not adjust camera zoom: ${(zoomError as Error).message}`);
     }
   }
 
@@ -1122,25 +1113,17 @@ function App() {
                       </div>
                       <p className="camera-tip">
                         {cameraReady
-                          ? "Scanning continuously. Hold the QR code steady; to log another copy, move it out of view briefly, then show it again."
+                          ? `Scanning continuously${cameraResolution ? ` at ${cameraResolution}` : ""}. Tap Add each time you want to log a copy. If a close-up is blurry, move the phone slightly farther away.`
                           : "Starting camera…"}
-                        {cameraZoom && " Use the zoom control instead of moving too close."}
                       </p>
-                      {cameraZoom && (
-                        <label className="camera-zoom-control" htmlFor="camera-zoom">
-                          <span>Zoom</span>
-                          <input
-                            id="camera-zoom"
-                            type="range"
-                            min={cameraZoom.min}
-                            max={cameraZoom.max}
-                            step={cameraZoom.step}
-                            value={cameraZoom.value}
-                            onChange={(event) => void changeCameraZoom(Number(event.target.value))}
-                          />
-                          <span>{cameraZoom.value.toFixed(1)}×</span>
-                        </label>
-                      )}
+                      <button
+                        className={`button scan-add-button${detectedGame ? " scan-add-ready" : ""}`}
+                        disabled={!cameraReady || !detectedGame || addingScan}
+                        onClick={() => detectedGame && void recordScan(detectedGame.id)}
+                        type="button"
+                      >
+                        {addingScan ? "Adding…" : detectedGame ? `Add ${detectedGame.name}` : "Waiting for QR code"}
+                      </button>
                     </>
                   ) : <button className="button button-primary" disabled={!games.length} onClick={() => setScannerOpen(true)} type="button">Open camera</button>}
                   {lastScan && (
