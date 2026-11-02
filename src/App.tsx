@@ -360,9 +360,9 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#" onClick={() => setView("collection")} aria-label="Tabletop Tracker home">
+        <a className="brand" href="#" onClick={() => setView("collection")} aria-label="BoardGameScanner home">
           <span className="brand-mark">T</span>
-          <span>tabletop<span className="brand-light">tracker</span></span>
+          <span>BoardGameScanner</span>
         </a>
         <div className="topbar-right">
           <span className={`connection-pill ${supabase ? "connected" : "local"}`}>
@@ -374,32 +374,10 @@ function App() {
       </header>
 
       <main className="main-content">
-        <section className="hero">
-          <div className="hero-copy">
-            <p className="eyebrow"><span className="eyebrow-line" /> YOUR COLLECTION, AT A GLANCE</p>
-            <h1>Every game.<br /><span>Accounted for.</span></h1>
-            <p className="hero-subtitle">Organize your shelf, label your games, and get everyone on the same page.</p>
-          </div>
-          <div className="hero-art" aria-hidden="true">
-            <div className="art-card art-card-back"><span>♟</span></div>
-            <div className="art-card art-card-mid"><span>✦</span></div>
-            <div className="art-card art-card-front"><span>♜</span></div>
-            <span className="art-spark spark-one">✳</span>
-            <span className="art-spark spark-two">✦</span>
-          </div>
-        </section>
-
-        {!supabase && (
-          <div className="setup-notice">
-            <span className="notice-icon">i</span>
-            <p><strong>You're in local mode.</strong> Add your Supabase settings to enable shared sessions and live scanning across devices. <a href="https://github.com/ruddpj/BoardGameScanner#set-up-shared-scanning" target="_blank" rel="noreferrer">Setup guide</a></p>
-          </div>
-        )}
-
         <nav className="tabs" aria-label="Main navigation">
           {([
-            ["collection", "Collection", games.length],
-            ["labels", "QR labels", null],
+            ["collection", "Games", games.length],
+            ["labels", "QR codes", null],
             ["session", "Scan session", null],
           ] as const).map(([id, label, count]) => (
             <button
@@ -412,8 +390,6 @@ function App() {
               {count !== null && <span className="tab-count">{count}</span>}
             </button>
           ))}
-          <span className="tabs-spacer" />
-          {view === "collection" && <button className="button button-dark button-small" onClick={() => setView("labels")} type="button">Generate QR labels <span>↗</span></button>}
         </nav>
 
         {(error || notice) && (
@@ -427,18 +403,15 @@ function App() {
           <section className="workspace">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">THE SHELF</p>
-                <h2>Your collection <span className="heading-count">{games.length}</span></h2>
+                <h2>Games <span className="heading-count">{games.length}</span></h2>
               </div>
-              <span className="muted">{loadingGames ? "Syncing collection…" : "Sorted alphabetically"}</span>
+              {loadingGames && <span className="muted">Loading…</span>}
             </div>
             <div className="collection-layout">
               <div className="game-list">
                 {games.length === 0 && !loadingGames ? (
                   <div className="empty-state">
-                    <span className="empty-icon">♧</span>
-                    <h3>Your shelf is looking a little empty</h3>
-                    <p>Add your first game to get started. Every game gets its own unique QR code.</p>
+                    <h3>No games</h3>
                   </div>
                 ) : (
                   games.map((game, index) => (
@@ -454,7 +427,7 @@ function App() {
                 )}
               </div>
               <aside className="add-panel">
-                <div className="panel-title"><span className="plus-icon">＋</span><h3>Add to your shelf</h3></div>
+                <div className="panel-title"><h3>Add games</h3></div>
                 <form onSubmit={(event) => void addSingleGame(event)}>
                   <label htmlFor="game-name">Game name</label>
                   <div className="input-action">
@@ -462,7 +435,7 @@ function App() {
                     <button className="button button-green button-small" disabled={!nameInput.trim()} type="submit">Add</button>
                   </div>
                 </form>
-                <div className="form-divider"><span>OR ADD A BATCH</span></div>
+                <div className="form-divider"><span>OR</span></div>
                 <form onSubmit={(event) => void addBulkGames(event)}>
                   <label htmlFor="bulk-games">One game per line</label>
                   <textarea id="bulk-games" placeholder={"Wingspan\nTicket to Ride\nAzul"} rows={5} value={bulkInput} onChange={(event) => setBulkInput(event.target.value)} />
@@ -476,12 +449,11 @@ function App() {
         {view === "labels" && (
           <section className="workspace">
             <div className="section-heading">
-              <div><p className="eyebrow">PRINT & PLAY</p><h2>QR labels <span className="heading-count">{games.length}</span></h2></div>
-              <button className="button button-dark button-small" disabled={!games.length} onClick={() => window.print()} type="button">Print labels <span>↗</span></button>
+              <h2>QR codes <span className="heading-count">{games.length}</span></h2>
+              <button className="button button-primary button-small" disabled={!games.length} onClick={() => window.print()} type="button">Print</button>
             </div>
-            <p className="section-description">Each code contains a unique game UUID. Print the whole sheet or save an individual label.</p>
             {games.length === 0 ? (
-              <div className="empty-state"><span className="empty-icon">▦</span><h3>No labels just yet</h3><p>Add games to your collection and their QR codes will appear here.</p><button className="button button-green" onClick={() => setView("collection")} type="button">Add games</button></div>
+              <div className="empty-state"><h3>No games</h3><button className="button button-primary" onClick={() => setView("collection")} type="button">Add games</button></div>
             ) : (
               <div className="qr-grid">
                 {games.map((game) => (
@@ -505,40 +477,34 @@ function App() {
         {view === "session" && (
           <section className="workspace">
             <div className="section-heading">
-              <div><p className="eyebrow">PLAY TOGETHER</p><h2>Scan session</h2></div>
+              <h2>Scan session</h2>
               {session && <button className="button button-outline button-small" onClick={() => { setSession(null); setScans([]); }} type="button">Leave session</button>}
             </div>
             {!supabase ? (
               <div className="empty-state">
-                <span className="empty-icon">⌁</span>
-                <h3>Cloud setup needed</h3>
-                <p>Shared scan sessions need Supabase. Set it up to let multiple players scan the same collection in real time.</p>
-                <a className="button button-green" href="https://github.com/ruddpj/BoardGameScanner#set-up-shared-scanning" target="_blank" rel="noreferrer">View setup guide</a>
+                <h3>Shared sessions need Supabase</h3>
+                <a className="button button-primary" href="https://github.com/ruddpj/BoardGameScanner#set-up-shared-scanning" target="_blank" rel="noreferrer">Setup guide</a>
               </div>
             ) : !session ? (
               <div className="session-options">
                 <article className="session-card">
-                  <span className="session-symbol">＋</span><p className="eyebrow">START FRESH</p>
                   <h3>Create a session</h3>
-                  <p>Start a new scan and invite others with a four-letter code.</p>
-                  <button className="button button-green full-width" disabled={creatingSession} onClick={() => void createSession()} type="button">{creatingSession ? "Creating…" : "Create new session"} <span>↗</span></button>
+                  <button className="button button-primary full-width" disabled={creatingSession} onClick={() => void createSession()} type="button">{creatingSession ? "Creating…" : "Create session"}</button>
                 </article>
                 <article className="session-card">
-                  <span className="session-symbol">⌁</span><p className="eyebrow">JOIN YOUR CREW</p>
-                  <h3>Have a session code?</h3>
-                  <p>Enter the four-letter code shared by your game-night host.</p>
+                  <h3>Join a session</h3>
                   <form onSubmit={(event) => void joinSession(event)}>
                     <label htmlFor="session-code">Session code</label>
                     <input className="code-input" id="session-code" maxLength={4} placeholder="ABCD" value={sessionInput} onChange={(event) => setSessionInput(event.target.value.toUpperCase().replace(/[^A-Z]/g, ""))} />
-                    <button className="button button-outline full-width" disabled={sessionInput.length !== 4} type="submit">Join session <span>↗</span></button>
+                    <button className="button button-outline full-width" disabled={sessionInput.length !== 4} type="submit">Join session</button>
                   </form>
                 </article>
               </div>
             ) : (
               <div className="session-board">
                 <div className="session-banner">
-                  <div><p className="eyebrow">SHARE THIS CODE TO JOIN</p><div className="session-code">{session.code.split("").map((letter, index) => <span key={`${letter}-${index}`}>{letter}</span>)}</div></div>
-                  <div className="session-progress"><strong>{scans.length}<span> / {games.length}</span></strong><span>games found</span></div>
+                  <div><div className="session-label">Session code</div><div className="session-code">{session.code.split("").map((letter, index) => <span key={`${letter}-${index}`}>{letter}</span>)}</div></div>
+                  <div className="session-progress"><strong>{scans.length}<span> / {games.length}</span></strong><span>scanned</span></div>
                   <button className="button button-light button-small" onClick={() => {
                     void navigator.clipboard.writeText(session.code)
                       .then(() => setNotice("Session code copied."))
@@ -547,7 +513,7 @@ function App() {
                 </div>
                 <div className="scanner-panel">
                   <div className="scanner-topline">
-                    <div><h3>Scan a game</h3><p>All players see updates as they happen.</p></div>
+                    <div><h3>Scan a game</h3></div>
                     <div className="player-field"><label htmlFor="player-name">YOUR NAME</label><input id="player-name" maxLength={40} placeholder="Player" value={playerName} onChange={(event) => savePlayerName(event.target.value)} /></div>
                   </div>
                   {scannerOpen ? (
@@ -555,7 +521,7 @@ function App() {
                       <video ref={videoRef} className="camera-feed" muted playsInline />
                       <button className="button button-light button-small camera-close" onClick={() => setScannerOpen(false)} type="button">Stop camera</button>
                     </div>
-                  ) : <button className="button button-green" disabled={!games.length} onClick={() => setScannerOpen(true)} type="button">⌗ &nbsp; Open camera</button>}
+                  ) : <button className="button button-primary" disabled={!games.length} onClick={() => setScannerOpen(true)} type="button">Open camera</button>}
                   <form className="manual-scan" onSubmit={(event) => { event.preventDefault(); void recordScan(manualUuid); }}>
                     <label htmlFor="manual-uuid">Or enter a game UUID</label>
                     <div className="input-action"><input id="manual-uuid" placeholder="Paste UUID here" value={manualUuid} onChange={(event) => setManualUuid(event.target.value)} /><button className="button button-outline button-small" disabled={!manualUuid.trim()} type="submit">Mark found</button></div>
@@ -564,14 +530,14 @@ function App() {
                 <div className="scan-lists">
                   <div>
                     <div className="list-heading"><h3>Still on the shelf</h3><span className="list-count remaining-count">{remaining.length}</span></div>
-                    {remaining.length ? <ul className="scan-list">{remaining.map((game) => <li key={game.id}><span className="scan-status pending" /><span>{game.name}</span></li>)}</ul> : <p className="list-empty">Everything is accounted for. Nice work!</p>}
+                    {remaining.length ? <ul className="scan-list">{remaining.map((game) => <li key={game.id}><span className="scan-status pending" /><span>{game.name}</span></li>)}</ul> : <p className="list-empty">No unscanned games.</p>}
                   </div>
                   <div>
                     <div className="list-heading"><h3>Found</h3><span className="list-count found-count">{scans.length}</span></div>
                     {scans.length ? <ul className="scan-list">{scans.map((scan) => {
                       const game = games.find((entry) => entry.id === scan.game_id);
                       return game ? <li key={scan.game_id}><span className="scan-status found">✓</span><span>{game.name}<small> by {scan.scanned_by}</small></span></li> : null;
-                    })}</ul> : <p className="list-empty">Scanned games will show up here.</p>}
+                    })}</ul> : <p className="list-empty">No scans yet.</p>}
                   </div>
                 </div>
               </div>
@@ -579,7 +545,6 @@ function App() {
           </section>
         )}
       </main>
-      <footer><span>Made for game night.</span><span>Keep the shelf in play <span className="footer-heart">♥</span></span></footer>
     </div>
   );
 }

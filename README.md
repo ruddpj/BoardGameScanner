@@ -1,6 +1,6 @@
-# Tabletop Tracker
+# BoardGameScanner
 
-A mobile-friendly board game catalog, UUID QR label maker, and shared live scan-session tracker. The site is a static app that can be hosted on GitHub Pages; Supabase provides the shared database and live updates.
+A board game catalog, UUID QR label maker, and shared live scan-session tracker. The site is a static app hosted on GitHub Pages; Supabase provides the shared database and live updates.
 
 ## Set up shared scanning
 
