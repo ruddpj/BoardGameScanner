@@ -819,7 +819,7 @@ function App() {
           await QRCode.toDataURL(game.id, {
             width: 240,
             margin: 2,
-            color: { dark: "#183c34", light: "#ffffff" },
+            color: { dark: "#000000", light: "#ffffff" },
           }),
         ] as const),
       );
