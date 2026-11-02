@@ -1071,7 +1071,6 @@ function App() {
         {view === "labels" && (
           <section className="workspace">
             <div className="section-heading">
-              <h2>QR codes <span className="heading-count">{games.length}</span></h2>
               <button className="button button-primary button-small" disabled={!games.length} onClick={() => window.print()} type="button">Print</button>
             </div>
             {games.length === 0 ? (
