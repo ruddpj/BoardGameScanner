@@ -23,12 +23,11 @@ a { color: inherit; }
 .app-shell { max-width: 1160px; min-height: 100vh; margin: auto; padding: 0 42px; }
 .topbar { height: 68px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .brand { display: flex; gap: 10px; align-items: center; color: #f3effa; font-size: 16px; font-weight: 700; letter-spacing: -.3px; text-decoration: none; }
-.brand-mark { width: 30px; height: 30px; display: grid; place-items: center; color: white; background: #7144b4; border-radius: 7px; font-size: 16px; }
+.brand-logo { width: 32px; height: 24px; object-fit: contain; }
 .topbar-right { display: flex; align-items: center; gap: 12px; }
 .connection-pill { display: inline-flex; gap: 7px; align-items: center; padding: 6px 10px; border: 1px solid var(--line); border-radius: 30px; background: var(--panel); color: #bbb4c8; font-size: 10px; font-weight: 600; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #c39051; }
 .connection-pill.connected .status-dot { background: #67be8a; }
-.avatar { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #55436e; border-radius: 50%; background: #332744; color: #d7c6f5; font-size: 12px; font-weight: 700; }
 .main-content { min-height: calc(100vh - 68px); }
 .tabs { min-height: 54px; display: flex; align-items: center; gap: 25px; border-bottom: 1px solid var(--line); }
 .tab { position: relative; height: 54px; padding: 0 1px; border: 0; background: none; color: #a49bad; font-size: 12px; font-weight: 600; }
@@ -133,7 +132,7 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .app-shell { padding: 0 16px; }
   .topbar { height: 60px; }
   .brand { font-size: 14px; }
-  .brand-mark { width: 27px; height: 27px; }
+  .brand-logo { width: 29px; height: 22px; }
   .tabs { gap: 16px; }
   .tab { font-size: 11px; }
   .tabs > .button { padding: 0 9px; font-size: 9px; }

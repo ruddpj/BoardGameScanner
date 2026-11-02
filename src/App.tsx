@@ -397,7 +397,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <a className="brand" href="#" onClick={() => setView("collection")} aria-label="BoardGameScanner home">
-          <span className="brand-mark">T</span>
+          <img className="brand-logo" src={`${import.meta.env.BASE_URL}logo-white.png`} alt="" />
           <span>BoardGameScanner</span>
         </a>
         <div className="topbar-right">
@@ -405,7 +405,6 @@ function App() {
             <span className="status-dot" />
             {supabase ? "Cloud connected" : "Local mode"}
           </span>
-          <span className="avatar">{(playerName.trim()[0] || "Y").toUpperCase()}</span>
         </div>
       </header>
 
