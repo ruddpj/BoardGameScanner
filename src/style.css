@@ -185,8 +185,9 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .tabs > .button { padding: 0 9px; font-size: 9px; }
   .collection-layout { grid-template-columns: 1fr; }
   .add-panel { order: -1; }
-  .game-row { grid-template-columns: 34px minmax(0, 1fr) 146px 24px; gap: 6px; }
-  .copy-count-form { gap: 6px; }
+  .game-row { grid-template-columns: 30px minmax(0, 1fr) 102px 18px; gap: 5px; }
+  .copy-count-form { width: 102px; grid-template-columns: minmax(0, 1fr) 44px; gap: 6px; }
+  .copy-count-form input { width: 100%; min-width: 0; }
   .copy-count-label { display: none; }
   .session-options, .scan-lists { grid-template-columns: 1fr; }
   .session-options { margin-top: 14px; }
