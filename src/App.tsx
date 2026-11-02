@@ -8,6 +8,13 @@ type Game = { id: string; name: string; copies: number };
 type ScanSession = { id: string; code: string; created_at: string; saved_at?: string | null };
 type Scan = { id: string; game_id: string; scanned_at: string };
 type ScanPoint = { x: number; y: number };
+type DetectedBarcode = {
+  rawValue: string;
+  cornerPoints?: ScanPoint[];
+  boundingBox?: { x: number; y: number; width: number; height: number };
+};
+type NativeBarcodeDetector = { detect(source: HTMLVideoElement): Promise<DetectedBarcode[]> };
+type NativeBarcodeDetectorConstructor = new(options?: { formats?: string[] }) => NativeBarcodeDetector;
 type View = "collection" | "labels" | "session" | "past-sessions";
 type FocusModeCapabilities = MediaTrackCapabilities & { focusMode?: string[] };
 type FocusModeConstraintSet = MediaTrackConstraintSet & { focusMode?: ConstrainDOMString };
@@ -347,6 +354,7 @@ function App() {
       focusMode: { ideal: "continuous" },
     };
     let active = true;
+    let nativeScanTimer: number | null = null;
     const startCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -376,32 +384,86 @@ function App() {
             if (active) setError(`Could not enable continuous autofocus: ${focusError.message}`);
           });
         }
-        const reader = new BrowserMultiFormatReader(new Map<DecodeHintType, boolean | BarcodeFormat[]>([
-          [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]],
-          [DecodeHintType.TRY_HARDER, true],
-        ]));
-        void reader.decodeFromVideoElement(videoRef.current!, (result) => {
+        const acceptDetection = (rawValue: string, points: ScanPoint[] = []) => {
           if (!active || frozenRef.current) return;
-          if (!result) return;
-          const decodedText = result.getText().trim().toLowerCase();
+          const decodedText = rawValue.trim().toLowerCase();
           const game = gamesRef.current.find((entry) => entry.id.toLowerCase() === decodedText) ?? null;
           if (!game) return;
           frozenRef.current = true;
           videoRef.current?.pause();
           setDetectedGame(game);
-          setDetectedPoints(result.getResultPoints().map((point) => ({
-            x: point.getX(),
-            y: point.getY(),
-          })));
-        }).then((controls) => {
-          if (active) {
-            scannerControlsRef.current = controls;
+          setDetectedPoints(points);
+        };
+        const startZxingFallback = () => {
+          const reader = new BrowserMultiFormatReader(new Map<DecodeHintType, boolean | BarcodeFormat[]>([
+            [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]],
+            [DecodeHintType.TRY_HARDER, true],
+          ]), {
+            delayBetweenScanAttempts: 100,
+            delayBetweenScanSuccess: 100,
+          });
+          void reader.decodeFromVideoElement(videoRef.current!, (result) => {
+            if (!result) return;
+            acceptDetection(result.getText(), result.getResultPoints().map((point) => ({
+              x: point.getX(),
+              y: point.getY(),
+            })));
+          }).then((controls) => {
+            if (active) {
+              scannerControlsRef.current = controls;
+              setCameraReady(true);
+            } else {
+              controls.stop();
+            }
+          }).catch((scanError: Error) => {
+            if (active) setError(`Could not start continuous scanning: ${scanError.message}`);
+          });
+        };
+        const NativeDetector = (window as Window & {
+          BarcodeDetector?: NativeBarcodeDetectorConstructor;
+        }).BarcodeDetector;
+        if (NativeDetector) {
+          try {
+            const detector = new NativeDetector({ formats: ["qr_code"] });
+            const scanNativeFrame = async () => {
+              if (!active) return;
+              if (!frozenRef.current && videoRef.current?.readyState === HTMLMediaElement.HAVE_ENOUGH_DATA) {
+                try {
+                  const barcodes = await detector.detect(videoRef.current);
+                  for (const barcode of barcodes) {
+                    const box = barcode.boundingBox;
+                    const points = barcode.cornerPoints?.length
+                      ? barcode.cornerPoints
+                      : box
+                        ? [
+                            { x: box.x, y: box.y },
+                            { x: box.x + box.width, y: box.y },
+                            { x: box.x + box.width, y: box.y + box.height },
+                            { x: box.x, y: box.y + box.height },
+                          ]
+                        : [];
+                    acceptDetection(barcode.rawValue, points);
+                    if (frozenRef.current) break;
+                  }
+                } catch (detectorError) {
+                  if (active) {
+                    setError(`Native QR scanner unavailable; using compatibility scanner: ${(detectorError as Error).message}`);
+                    startZxingFallback();
+                  }
+                  return;
+                }
+              }
+              if (active) nativeScanTimer = window.setTimeout(() => void scanNativeFrame(), 100);
+            };
             setCameraReady(true);
+            void scanNativeFrame();
+          } catch (detectorError) {
+            setError(`Native QR scanner unavailable; using compatibility scanner: ${(detectorError as Error).message}`);
+            startZxingFallback();
           }
-          else controls.stop();
-        }).catch((scanError: Error) => {
-          if (active) setError(`Could not start continuous scanning: ${scanError.message}`);
-        });
+        } else {
+          startZxingFallback();
+        }
       } catch (cameraError) {
         if (active) setError(`Could not start camera: ${(cameraError as Error).message}`);
       }
@@ -414,6 +476,7 @@ function App() {
       setDetectedGame(null);
       setDetectedPoints([]);
       frozenRef.current = false;
+      if (nativeScanTimer !== null) window.clearTimeout(nativeScanTimer);
       scannerControlsRef.current?.stop();
       scannerControlsRef.current = null;
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -747,14 +810,15 @@ function App() {
   async function addDetectedGame() {
     if (!detectedGame || addingScan) return;
     if (!(await recordScan(detectedGame.id))) return;
-    frozenRef.current = false;
-    setDetectedGame(null);
-    setDetectedPoints([]);
     try {
       await videoRef.current?.play();
     } catch (cameraError) {
       setError(`Could not resume camera after scan: ${(cameraError as Error).message}`);
+      return;
     }
+    frozenRef.current = false;
+    setDetectedGame(null);
+    setDetectedPoints([]);
   }
 
   async function changeSavedScanCount(game: Game, delta: number) {
