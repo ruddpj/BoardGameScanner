@@ -4,9 +4,9 @@ import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Game = { id: string; name: string; copies: number };
-type ScanSession = { id: string; code: string; created_at: string };
+type ScanSession = { id: string; code: string; created_at: string; saved_at?: string | null };
 type Scan = { game_id: string; scanned_by: string; scanned_at: string };
-type View = "collection" | "labels" | "session";
+type View = "collection" | "labels" | "session" | "past-sessions";
 
 const storageKey = "tabletop-tracker-games";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -58,6 +58,14 @@ function isMissingCopiesColumn(error: { code?: string; message?: string }): bool
   );
 }
 
+function isMissingSavedAtColumn(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column scan_sessions\.saved_at does not exist/i.test(error.message ?? "")
+  );
+}
+
 function readLocalGames(): Game[] {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
@@ -98,6 +106,9 @@ function App() {
   const [copyDrafts, setCopyDrafts] = useState<Record<string, string>>({});
   const [copyCountsAvailable, setCopyCountsAvailable] = useState(true);
   const [session, setSession] = useState<ScanSession | null>(null);
+  const [pastSessions, setPastSessions] = useState<ScanSession[]>([]);
+  const [loadingPastSessions, setLoadingPastSessions] = useState(false);
+  const [sessionHistoryAvailable, setSessionHistoryAvailable] = useState(true);
   const [sessionInput, setSessionInput] = useState("");
   const [playerName, setPlayerName] = useState(
     () => localStorage.getItem("tabletop-tracker-player") ?? "",
@@ -151,6 +162,28 @@ function App() {
     setScans(data ?? []);
   }, []);
 
+  const refreshPastSessions = useCallback(async () => {
+    if (!supabase) return;
+    setLoadingPastSessions(true);
+    try {
+      const { data, error: historyError } = await supabase
+        .from("scan_sessions")
+        .select("id, code, created_at, saved_at")
+        .not("saved_at", "is", null)
+        .order("saved_at", { ascending: false });
+      if (historyError && isMissingSavedAtColumn(historyError)) {
+        setSessionHistoryAvailable(false);
+        setPastSessions([]);
+        return;
+      }
+      if (historyError) throw historyError;
+      setSessionHistoryAvailable(true);
+      setPastSessions(data ?? []);
+    } finally {
+      setLoadingPastSessions(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshGames()
       .catch((loadError: Error) => setError(`Could not load games: ${loadError.message}`))
@@ -190,6 +223,26 @@ function App() {
       .on(
         "postgres_changes",
         {
+          event: "UPDATE",
+          schema: "public",
+          table: "scan_sessions",
+          filter: `id=eq.${session.id}`,
+        },
+        (payload) => {
+          const updatedSession = payload.new as Partial<ScanSession>;
+          if (updatedSession.saved_at) {
+            setSession((current) =>
+              current?.id === session.id
+                ? { ...current, saved_at: updatedSession.saved_at }
+                : current,
+            );
+            setScannerOpen(false);
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
           event: "*",
           schema: "public",
           table: "scans",
@@ -204,6 +257,13 @@ function App() {
       void supabase.removeChannel(channel);
     };
   }, [refreshScans, session]);
+
+  useEffect(() => {
+    if (view !== "past-sessions" || !supabase) return;
+    void refreshPastSessions().catch((historyError: Error) => {
+      setError(`Could not load past sessions: ${historyError.message}`);
+    });
+  }, [refreshPastSessions, view]);
 
   useEffect(() => {
     if (!scannerOpen || !videoRef.current) return;
@@ -360,6 +420,48 @@ function App() {
     }
   }
 
+  async function saveSession() {
+    if (!supabase || !session || session.saved_at) return;
+    setError("");
+    try {
+      const savedAt = new Date().toISOString();
+      const { data, error: saveError } = await supabase
+        .from("scan_sessions")
+        .update({ saved_at: savedAt })
+        .eq("id", session.id)
+        .is("saved_at", null)
+        .select("id, code, created_at, saved_at")
+        .maybeSingle();
+      if (saveError) {
+        if (isMissingSavedAtColumn(saveError)) {
+          throw new Error("Run the updated Supabase schema to enable saving session history.");
+        }
+        throw saveError;
+      }
+      let savedSession = data;
+      if (!savedSession) {
+        const { data: existingSession, error: existingError } = await supabase
+          .from("scan_sessions")
+          .select("id, code, created_at, saved_at")
+          .eq("id", session.id)
+          .single();
+        if (existingError) throw existingError;
+        savedSession = existingSession;
+      }
+      setSession(savedSession);
+      setScannerOpen(false);
+      await refreshPastSessions();
+      setNotice(`Session ${session.code} saved.`);
+    } catch (saveError) {
+      setError(`Could not save session: ${(saveError as Error).message}`);
+    }
+  }
+
+  function openPastSession(pastSession: ScanSession) {
+    setSession(pastSession);
+    setView("session");
+  }
+
   async function joinSession(event: React.FormEvent) {
     event.preventDefault();
     if (!supabase) return;
@@ -370,11 +472,23 @@ function App() {
       return;
     }
     try {
-      const { data, error: joinError } = await supabase
+      let { data, error: joinError } = await supabase
         .from("scan_sessions")
-        .select("id, code, created_at")
+        .select("id, code, created_at, saved_at")
         .eq("code", code)
         .maybeSingle();
+      if (joinError && isMissingSavedAtColumn(joinError)) {
+        setSessionHistoryAvailable(false);
+        const legacyResult = await supabase
+          .from("scan_sessions")
+          .select("id, code, created_at")
+          .eq("code", code)
+          .maybeSingle();
+        data = legacyResult.data
+          ? { ...legacyResult.data, saved_at: null }
+          : null;
+        joinError = legacyResult.error;
+      }
       if (joinError) throw joinError;
       if (!data) {
         setError("No active session found for that code.");
@@ -389,7 +503,7 @@ function App() {
   }
 
   async function recordScan(rawValue: string) {
-    if (!supabase || !session) return;
+    if (!supabase || !session || session.saved_at) return;
     const id = rawValue.trim().toLowerCase();
     const game = games.find((entry) => entry.id.toLowerCase() === id);
     if (!game) {
@@ -473,6 +587,7 @@ function App() {
             ["collection", "Games", games.length],
             ["labels", "QR codes", null],
             ["session", "Scan session", null],
+            ["past-sessions", "Past sessions", pastSessions.length || null],
           ] as const).map(([id, label, count]) => (
             <button
               className={`tab ${view === id ? "active" : ""}`}
@@ -606,11 +721,56 @@ function App() {
           </section>
         )}
 
+        {view === "past-sessions" && (
+          <section className="workspace">
+            <div className="section-heading">
+              <h2>Past sessions <span className="heading-count">{pastSessions.length}</span></h2>
+            </div>
+            {!supabase ? (
+              <div className="empty-state"><h3>Shared sessions need Supabase</h3></div>
+            ) : !sessionHistoryAvailable ? (
+              <div className="schema-warning" role="status">
+                Session history is not enabled in the database yet. Run the updated{" "}
+                <a href="https://github.com/ruddpj/BoardGameScanner/blob/main/supabase/schema.sql" target="_blank" rel="noreferrer">Supabase schema</a>
+                {" "}to save and view past sessions.
+              </div>
+            ) : loadingPastSessions ? (
+              <p className="muted">Loading sessions…</p>
+            ) : pastSessions.length ? (
+              <div className="past-session-list">
+                {pastSessions.map((pastSession) => (
+                  <article className="past-session-row" key={pastSession.id}>
+                    <div className="past-session-code">{pastSession.code}</div>
+                    <div className="past-session-info">
+                      <strong>Saved session</strong>
+                      <span>{pastSession.saved_at ? new Date(pastSession.saved_at).toLocaleString() : ""}</span>
+                    </div>
+                    <button className="button button-outline button-small" onClick={() => openPastSession(pastSession)} type="button">View</button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state"><h3>No saved sessions</h3></div>
+            )}
+          </section>
+        )}
+
         {view === "session" && (
           <section className="workspace">
             <div className="section-heading">
               <h2>Scan session</h2>
-              {session && <button className="button button-outline button-small" onClick={() => { setSession(null); setScans([]); }} type="button">Leave session</button>}
+              {session && (
+                <div className="session-actions">
+                  {session.saved_at ? (
+                    <span className="saved-badge">Saved {new Date(session.saved_at).toLocaleString()}</span>
+                  ) : (
+                    <button className="button button-primary button-small" onClick={() => void saveSession()} type="button">Save session</button>
+                  )}
+                  <button className="button button-outline button-small" onClick={() => { setSession(null); setScans([]); setView("past-sessions"); }} type="button">
+                    {session.saved_at ? "Back to past sessions" : "Leave session"}
+                  </button>
+                </div>
+              )}
             </div>
             {!supabase ? (
               <div className="empty-state">
@@ -648,16 +808,18 @@ function App() {
                     <div><h3>Scan a game</h3></div>
                     <div className="player-field"><label htmlFor="player-name">YOUR NAME</label><input id="player-name" maxLength={40} placeholder="Player" value={playerName} onChange={(event) => savePlayerName(event.target.value)} /></div>
                   </div>
-                  {scannerOpen ? (
+                  {session.saved_at ? (
+                    <p className="saved-session-note">This session is saved and read-only.</p>
+                  ) : scannerOpen ? (
                     <div className="camera-wrap">
                       <video ref={videoRef} className="camera-feed" muted playsInline />
                       <button className="button button-light button-small camera-close" onClick={() => setScannerOpen(false)} type="button">Stop camera</button>
                     </div>
                   ) : <button className="button button-primary" disabled={!games.length} onClick={() => setScannerOpen(true)} type="button">Open camera</button>}
-                  <form className="manual-scan" onSubmit={(event) => { event.preventDefault(); void recordScan(manualUuid); }}>
+                  {!session.saved_at && <form className="manual-scan" onSubmit={(event) => { event.preventDefault(); void recordScan(manualUuid); }}>
                     <label htmlFor="manual-uuid">Or enter a game UUID</label>
                     <div className="input-action"><input id="manual-uuid" placeholder="Paste UUID here" value={manualUuid} onChange={(event) => setManualUuid(event.target.value)} /><button className="button button-outline button-small" disabled={!manualUuid.trim()} type="submit">Mark found</button></div>
-                  </form>
+                  </form>}
                 </div>
                 <div className="scan-lists">
                   <div>

@@ -96,6 +96,16 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
 .session-options { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 800px; margin: 22px auto 45px; }
 .session-card { padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .session-card h3 { margin: 0 0 16px; font-size: 14px; }
+.session-actions { display: flex; align-items: center; gap: 8px; }
+.saved-badge { color: #b7a5ce; font-size: 10px; }
+.saved-session-note { margin: 0; color: #b7a5ce; font-size: 11px; }
+.past-session-list { max-width: 760px; border-top: 1px solid var(--line); }
+.past-session-row { min-height: 64px; display: flex; align-items: center; gap: 13px; border-bottom: 1px solid var(--line); }
+.past-session-code { min-width: 54px; padding: 7px 8px; border: 1px solid #574173; border-radius: 5px; background: #251c33; color: #e4d4fa; font-size: 12px; font-weight: 750; letter-spacing: 1px; text-align: center; }
+.past-session-info { min-width: 0; display: grid; gap: 4px; }
+.past-session-info strong { color: #e7e1ef; font-size: 11px; }
+.past-session-info span { color: #9c95aa; font-size: 10px; }
+.past-session-row .button { margin-left: auto; }
 .code-input { max-width: 180px; margin-bottom: 7px; font-size: 18px; font-weight: 700; letter-spacing: 6px; text-align: center; text-transform: uppercase; }
 .session-board { max-width: 900px; margin: 0 auto 35px; }
 .session-banner { display: flex; align-items: center; gap: 22px; padding: 16px 19px; border: 1px solid #574173; border-radius: 8px; background: #251c33; color: white; }
@@ -139,8 +149,8 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .topbar { height: 60px; }
   .brand { font-size: 14px; }
   .brand-logo { width: 29px; height: 22px; }
-  .tabs { gap: 16px; }
-  .tab { font-size: 11px; }
+  .tabs { gap: 12px; }
+  .tab { font-size: 10px; }
   .tabs > .button { padding: 0 9px; font-size: 9px; }
   .collection-layout { grid-template-columns: 1fr; }
   .add-panel { order: -1; }
@@ -149,6 +159,7 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .copy-count-label { display: none; }
   .session-options, .scan-lists { grid-template-columns: 1fr; }
   .session-options { margin-top: 14px; }
+  .session-actions { align-items: flex-end; flex-direction: column; }
   .session-banner { gap: 11px; padding: 13px; }
   .session-code span { width: 23px; height: 29px; font-size: 17px; }
   .session-banner .button { padding: 0 8px; font-size: 9px; }

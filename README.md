@@ -5,7 +5,7 @@ A board game catalog, UUID QR label maker, and shared live scan-session tracker.
 ## Set up shared scanning
 
 1. Create a Supabase project.
-2. In the Supabase SQL Editor, run [`supabase/schema.sql`](./supabase/schema.sql). Re-run it for an existing installation to add the game copy-count column; existing games default to one copy.
+2. In the Supabase SQL Editor, run [`supabase/schema.sql`](./supabase/schema.sql). Re-run it for an existing installation to add the game copy-count and saved-session columns; existing games default to one copy.
 3. Copy the **Project URL** and anon/public key from **Project Settings → API**. Use the project URL by itself (for example, `https://your-project.supabase.co`), not the dashboard URL or a URL ending in `/rest/v1`. The app also strips a trailing `/rest/v1` if it was included accidentally.
 4. For local development, copy `.env.example` to `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 5. To publish from GitHub Actions, add repository secrets named `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with those same values.
@@ -18,12 +18,13 @@ Without Supabase configuration, the catalog is stored locally in the current bro
 ## Use
 
 - Add games one at a time or paste a list, one game per line.
-- Each game starts with one copy. Change a game's copy count in its collection row and save it.
+- Each game starts with one copy. Change a game's copy count in its collection row and save it; counts are shared across devices and shown in scan lists.
 - Open **QR codes** to generate an individual label or every label in the catalog; use **Print** for a printable sheet.
 - Create a scan session and share its four-letter join code. Other players open the same site, enter the code, and choose a player name.
 - Scan a label with the device camera, or paste a UUID into the manual scan field. The session updates live and shows scanned and remaining games.
+- Select **Save session** when scanning is finished. Saved sessions become read-only and can be reopened from **Past sessions**.
 
-Each game starts with one copy. Change a game's copy count in its collection row and save it; the count is shared across devices and shown in scan lists. QR codes contain the game's UUID, not its name, so labels remain unique even when games have similar names.
+QR codes contain the game's UUID, not its name, so labels remain unique even when games have similar names.
 
 ## Development
 
