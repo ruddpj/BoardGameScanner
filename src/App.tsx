@@ -1,4 +1,5 @@
-import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { DecodeHintType } from "@zxing/library";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 type Game = { id: string; name: string; copies: number };
 type ScanSession = { id: string; code: string; created_at: string; saved_at?: string | null };
 type Scan = { id: string; game_id: string; scanned_at: string };
+type ScanPoint = { x: number; y: number };
 type View = "collection" | "labels" | "session" | "past-sessions";
 type FocusModeCapabilities = MediaTrackCapabilities & { focusMode?: string[] };
 type FocusModeConstraintSet = MediaTrackConstraintSet & { focusMode?: ConstrainDOMString };
@@ -126,6 +128,7 @@ function App() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [lastScan, setLastScan] = useState<{ gameName: string; alreadyScanned: boolean } | null>(null);
   const [detectedGame, setDetectedGame] = useState<Game | null>(null);
+  const [detectedPoints, setDetectedPoints] = useState<ScanPoint[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraResolution, setCameraResolution] = useState("");
@@ -137,6 +140,7 @@ function App() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
   const scanBusyRef = useRef(false);
+  const frozenRef = useRef(false);
   const gamesRef = useRef(games);
   gamesRef.current = games;
   const scansByGame = useMemo(
@@ -147,6 +151,23 @@ function App() {
     [scans],
   );
   const totalCopies = games.reduce((total, game) => total + game.copies, 0);
+  const highlightedQr = useMemo(() => {
+    if (detectedPoints.length < 3) return null;
+    const xs = detectedPoints.map((point) => point.x);
+    const ys = detectedPoints.map((point) => point.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const paddingX = Math.max((maxX - minX) * 0.22, 12);
+    const paddingY = Math.max((maxY - minY) * 0.22, 12);
+    return {
+      x: minX - paddingX,
+      y: minY - paddingY,
+      width: maxX - minX + paddingX * 2,
+      height: maxY - minY + paddingY * 2,
+    };
+  }, [detectedPoints]);
   const remaining = games.filter(
     (game) => (scansByGame.get(game.id) ?? 0) < game.copies,
   );
@@ -343,22 +364,10 @@ function App() {
         const videoCapabilities = videoTrack && typeof videoTrack.getCapabilities === "function"
           ? videoTrack.getCapabilities()
           : undefined;
-        const targetWidth = Math.min(videoCapabilities?.width?.max ?? 3840, 3840);
-        const targetHeight = Math.min(videoCapabilities?.height?.max ?? 2160, 2160);
-        if (videoTrack) {
-          await videoTrack.applyConstraints({
-            width: { ideal: targetWidth },
-            height: { ideal: targetHeight },
-          }).catch((resolutionError: Error) => {
-            if (active) setError(`Could not select the highest camera resolution: ${resolutionError.message}`);
-          });
-          const settings = videoTrack.getSettings();
-          setCameraResolution(
-            settings.width && settings.height
-              ? `${settings.width} × ${settings.height}`
-              : "",
-          );
-        }
+        const settings = videoTrack?.getSettings();
+        setCameraResolution(settings?.width && settings.height
+          ? `${settings.width} × ${settings.height}`
+          : "");
         const focusModes = videoCapabilities as FocusModeCapabilities | undefined;
         if (videoTrack && focusModes?.focusMode?.includes("continuous")) {
           await videoTrack.applyConstraints({
@@ -367,13 +376,23 @@ function App() {
             if (active) setError(`Could not enable continuous autofocus: ${focusError.message}`);
           });
         }
-        const reader = new BrowserMultiFormatReader();
+        const reader = new BrowserMultiFormatReader(new Map<DecodeHintType, boolean | BarcodeFormat[]>([
+          [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]],
+          [DecodeHintType.TRY_HARDER, true],
+        ]));
         void reader.decodeFromVideoElement(videoRef.current!, (result) => {
-          if (!active) return;
+          if (!active || frozenRef.current) return;
           if (!result) return;
           const decodedText = result.getText().trim().toLowerCase();
           const game = gamesRef.current.find((entry) => entry.id.toLowerCase() === decodedText) ?? null;
-          setDetectedGame((current) => current?.id === game?.id ? current : game);
+          if (!game) return;
+          frozenRef.current = true;
+          videoRef.current?.pause();
+          setDetectedGame(game);
+          setDetectedPoints(result.getResultPoints().map((point) => ({
+            x: point.getX(),
+            y: point.getY(),
+          })));
         }).then((controls) => {
           if (active) {
             scannerControlsRef.current = controls;
@@ -393,6 +412,8 @@ function App() {
       setCameraReady(false);
       setCameraResolution("");
       setDetectedGame(null);
+      setDetectedPoints([]);
+      frozenRef.current = false;
       scannerControlsRef.current?.stop();
       scannerControlsRef.current = null;
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -691,14 +712,13 @@ function App() {
     }
   }
 
-  async function recordScan(rawValue: string) {
-    if (!supabase || !session || session.saved_at) return;
-    if (scanBusyRef.current) return;
+  async function recordScan(rawValue: string): Promise<boolean> {
+    if (!supabase || !session || session.saved_at || scanBusyRef.current) return false;
     const id = rawValue.trim().toLowerCase();
     const game = games.find((entry) => entry.id.toLowerCase() === id);
     if (!game) {
       setError(`No game matches QR value "${rawValue}".`);
-      return;
+      return false;
     }
     const alreadyScanned = (scansByGame.get(game.id) ?? 0) > 0;
     scanBusyRef.current = true;
@@ -714,11 +734,26 @@ function App() {
       setNotice(alreadyScanned ? `${game.name} scanned again.` : `${game.name} scanned.`);
       setManualUuid("");
       await refreshScans(session.id);
+      return true;
     } catch (scanError) {
       setError(`Could not save scan: ${(scanError as Error).message}`);
+      return false;
     } finally {
       scanBusyRef.current = false;
       setAddingScan(false);
+    }
+  }
+
+  async function addDetectedGame() {
+    if (!detectedGame || addingScan) return;
+    if (!(await recordScan(detectedGame.id))) return;
+    frozenRef.current = false;
+    setDetectedGame(null);
+    setDetectedPoints([]);
+    try {
+      await videoRef.current?.play();
+    } catch (cameraError) {
+      setError(`Could not resume camera after scan: ${(cameraError as Error).message}`);
     }
   }
 
@@ -1109,17 +1144,39 @@ function App() {
                     <>
                       <div className="camera-wrap">
                         <video ref={videoRef} className="camera-feed" muted playsInline />
+                        {detectedGame && highlightedQr && videoRef.current?.videoWidth && videoRef.current.videoHeight && (
+                          <svg
+                            className="qr-highlight"
+                            viewBox={`0 0 ${videoRef.current.videoWidth} ${videoRef.current.videoHeight}`}
+                            preserveAspectRatio="xMidYMid meet"
+                            aria-hidden="true"
+                          >
+                            <rect
+                              x={highlightedQr.x}
+                              y={highlightedQr.y}
+                              width={highlightedQr.width}
+                              height={highlightedQr.height}
+                              rx="12"
+                            />
+                            <polygon points={detectedPoints.map((point) => `${point.x},${point.y}`).join(" ")} />
+                            {detectedPoints.map((point, index) => (
+                              <circle key={index} cx={point.x} cy={point.y} r="18" />
+                            ))}
+                          </svg>
+                        )}
                         <button className="button button-light button-small camera-close" onClick={() => setScannerOpen(false)} type="button">Stop camera</button>
                       </div>
                       <p className="camera-tip">
                         {cameraReady
-                          ? `Scanning continuously${cameraResolution ? ` at ${cameraResolution}` : ""}. Tap Add each time you want to log a copy. If a close-up is blurry, move the phone slightly farther away.`
+                          ? detectedGame
+                            ? `Image frozen${cameraResolution ? ` at ${cameraResolution}` : ""}. Confirm the highlighted QR, then add it.`
+                            : `Scanning continuously${cameraResolution ? ` at ${cameraResolution}` : ""}. Keep the code in view until it is recognized.`
                           : "Starting camera…"}
                       </p>
                       <button
                         className={`button scan-add-button${detectedGame ? " scan-add-ready" : ""}`}
                         disabled={!cameraReady || !detectedGame || addingScan}
-                        onClick={() => detectedGame && void recordScan(detectedGame.id)}
+                        onClick={() => void addDetectedGame()}
                         type="button"
                       >
                         {addingScan ? "Adding…" : detectedGame ? `Add ${detectedGame.name}` : "Waiting for QR code"}
