@@ -31,6 +31,12 @@ a { color: inherit; }
 .account-email { max-width: 180px; overflow: hidden; color: #bdb4ca; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .auth-backdrop { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 18px; background: #08060dcc; }
 .auth-dialog { width: min(100%, 380px); padding: 22px; border: 1px solid #494054; border-radius: 9px; background: #191621; box-shadow: 0 18px 70px #0009; }
+.game-edit-dialog { width: min(100%, 440px); }
+.game-edit-dialog form { gap: 8px; }
+.game-edit-dialog label:not(:first-child) { margin-top: 5px; }
+.game-uuid-readonly { display: block; padding: 10px; border: 1px solid #37313f; border-radius: 5px; background: #100e15; color: #bca3df; font-size: 11px; overflow-wrap: anywhere; user-select: all; }
+.edit-game-note { margin: 0; color: #aaa1b7; font-size: 10px; line-height: 1.5; }
+.edit-game-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .auth-dialog-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .auth-dialog-heading h2 { margin: 0; font-size: 17px; }
 .auth-dialog > p, .manage-prompt p, .session-card p { color: #aaa1b7; font-size: 11px; line-height: 1.55; }
@@ -40,7 +46,7 @@ a { color: inherit; }
 .manage-prompt h3 { margin-bottom: 8px; font-size: 13px; }
 .manage-prompt .button { margin-top: 0; }
 .game-row-spacer { width: 24px; }
-.copy-count-readonly { width: 146px; color: #c7a6fa; font-size: 11px; text-align: center; }
+.copy-count-readonly { color: #c7a6fa; font-size: 11px; }
 .main-content { min-height: calc(100vh - 68px); }
 .tabs { min-height: 54px; display: flex; align-items: center; gap: 25px; border-bottom: 1px solid var(--line); }
 .tab { position: relative; height: 54px; padding: 0 1px; border: 0; background: none; color: #a49bad; font-size: 12px; font-weight: 600; }
@@ -74,10 +80,8 @@ a { color: inherit; }
 .game-info { min-width: 0; display: grid; gap: 4px; }
 .game-info strong { overflow: hidden; color: #e7e1ef; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .game-info span { color: #948ba1; font-family: ui-monospace, monospace; font-size: 9px; overflow-wrap: anywhere; }
-.copy-count-form { width: 146px; display: grid; grid-template-columns: 34px 50px 44px; align-items: center; gap: 6px; }
-.copy-count-label { margin: 0; color: #a49bad; font-size: 9px; }
-.copy-count-form input { width: 52px; padding: 6px; text-align: center; }
-.copy-count-form .button { width: 44px; min-height: 28px; padding: 0 5px; }
+.game-copy-actions { width: 146px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.game-edit-button { min-height: 28px; padding: 0 9px; }
 .schema-warning { margin: -5px 0 16px; padding: 10px 12px; border: 1px solid #5b4b30; border-radius: 6px; background: #282116; color: #e1c48f; font-size: 11px; line-height: 1.5; }
 .schema-warning a { color: #d3b5ff; }
 .icon-button { margin-left: 0; padding: 4px 8px; border: 0; background: none; color: #938b9e; font-size: 18px; }
@@ -186,9 +190,7 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
   .collection-layout { grid-template-columns: 1fr; }
   .add-panel { order: -1; }
   .game-row { grid-template-columns: 30px minmax(0, 1fr) 102px 18px; gap: 5px; }
-  .copy-count-form { width: 102px; grid-template-columns: minmax(0, 1fr) 44px; gap: 6px; }
-  .copy-count-form input { width: 100%; min-width: 0; }
-  .copy-count-label { display: none; }
+  .game-copy-actions { width: 102px; gap: 4px; }
   .session-options, .scan-lists { grid-template-columns: 1fr; }
   .session-options { margin-top: 14px; }
   .session-actions { align-items: flex-end; flex-direction: column; }

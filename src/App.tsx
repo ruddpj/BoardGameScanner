@@ -2,7 +2,7 @@ import { BarcodeFormat, BrowserMultiFormatReader, type IScannerControls } from "
 import { DecodeHintType } from "@zxing/library";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import QRCode from "qrcode";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 type Game = { id: string; name: string; copies: number };
 type ScanSession = { id: string; code: string; created_at: string; saved_at?: string | null };
@@ -118,8 +118,11 @@ function App() {
   const [notice, setNotice] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [bulkInput, setBulkInput] = useState("");
-  const [copyDrafts, setCopyDrafts] = useState<Record<string, string>>({});
   const [copyCountsAvailable, setCopyCountsAvailable] = useState(true);
+  const [editingGame, setEditingGame] = useState<Game | null>(null);
+  const [editGameName, setEditGameName] = useState("");
+  const [editGameCopies, setEditGameCopies] = useState("1");
+  const [savingGameEdit, setSavingGameEdit] = useState(false);
   const [session, setSession] = useState<ScanSession | null>(null);
   const [pastSessions, setPastSessions] = useState<ScanSession[]>([]);
   const [loadingPastSessions, setLoadingPastSessions] = useState(false);
@@ -586,31 +589,60 @@ function App() {
     }
   }
 
-  async function updateGameCopies(game: Game, copies: number) {
+  function openGameEditor(game: Game) {
     if (supabase && !authUser) {
       setAuthOpen(true);
       return;
     }
+    setEditingGame(game);
+    setEditGameName(game.name);
+    setEditGameCopies(String(game.copies));
+  }
+
+  async function saveGameEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingGame || savingGameEdit) return;
+    const name = editGameName.trim();
+    const copies = Number(editGameCopies);
+    if (!name) {
+      setError("Game name cannot be empty.");
+      return;
+    }
+    if (games.some((game) =>
+      game.id !== editingGame.id &&
+      game.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase()
+    )) {
+      setError("A game with that name already exists.");
+      return;
+    }
+    if (copyCountsAvailable && (!Number.isInteger(copies) || copies < 1)) {
+      setError("Copy count must be a whole number greater than zero.");
+      return;
+    }
+
+    const updatedCopies = copyCountsAvailable ? copies : editingGame.copies;
+    setSavingGameEdit(true);
     setError("");
     try {
       if (supabase) {
+        const changes = copyCountsAvailable ? { name, copies: updatedCopies } : { name };
         const { error: updateError } = await supabase
           .from("games")
-          .update({ copies })
-          .eq("id", game.id);
+          .update(changes)
+          .eq("id", editingGame.id);
         if (updateError) throw updateError;
       }
-      setGames((current) =>
-        current.map((entry) => (entry.id === game.id ? { ...entry, copies } : entry)),
-      );
-      setCopyDrafts((current) => {
-        const remainingDrafts = { ...current };
-        delete remainingDrafts[game.id];
-        return remainingDrafts;
-      });
-      setNotice(`${game.name}: copy count updated to ${copies}.`);
+      setGames((current) => current
+        .map((game) => game.id === editingGame.id
+          ? { ...game, name, copies: updatedCopies }
+          : game)
+        .sort((left, right) => left.name.localeCompare(right.name)));
+      setNotice(`${name} updated.`);
+      setEditingGame(null);
     } catch (updateError) {
-      setError(`Could not update copy count: ${(updateError as Error).message}`);
+      setError(`Could not update game: ${(updateError as Error).message}`);
+    } finally {
+      setSavingGameEdit(false);
     }
   }
 
@@ -924,6 +956,63 @@ function App() {
         </div>
       </header>
 
+      {editingGame && (
+        <div className="auth-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !savingGameEdit) setEditingGame(null);
+        }}>
+          <section className="auth-dialog game-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-game-title">
+            <div className="auth-dialog-heading">
+              <h2 id="edit-game-title">Edit game</h2>
+              <button
+                className="icon-button"
+                aria-label="Close edit game dialog"
+                disabled={savingGameEdit}
+                onClick={() => setEditingGame(null)}
+                type="button"
+              >×</button>
+            </div>
+            <form onSubmit={(event) => void saveGameEdit(event)}>
+              <label htmlFor="edit-game-name">Game name</label>
+              <input
+                autoFocus
+                id="edit-game-name"
+                maxLength={120}
+                required
+                value={editGameName}
+                onChange={(event) => setEditGameName(event.target.value)}
+              />
+              <label htmlFor="edit-game-copies">Copies</label>
+              <input
+                id="edit-game-copies"
+                type="number"
+                min="1"
+                step="1"
+                required
+                disabled={!copyCountsAvailable}
+                value={editGameCopies}
+                onChange={(event) => setEditGameCopies(event.target.value)}
+              />
+              {!copyCountsAvailable && (
+                <p className="edit-game-note">Run the updated Supabase schema to enable copy-count editing.</p>
+              )}
+              <label htmlFor="edit-game-uuid">UUID (cannot be changed)</label>
+              <code className="game-uuid-readonly" id="edit-game-uuid">{editingGame.id}</code>
+              <div className="edit-game-actions">
+                <button
+                  className="button button-outline"
+                  disabled={savingGameEdit}
+                  onClick={() => setEditingGame(null)}
+                  type="button"
+                >Cancel</button>
+                <button className="button button-primary" disabled={savingGameEdit} type="submit">
+                  {savingGameEdit ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
       {authOpen && (
         <div className="auth-backdrop">
           <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
@@ -1000,37 +1089,16 @@ function App() {
                         <strong>{game.name}</strong>
                         <span>UUID · {game.id}</span>
                       </div>
-                      {canManage ? <form className="copy-count-form" onSubmit={(event) => {
-                        event.preventDefault();
-                        const input = new FormData(event.currentTarget).get("copies");
-                        const copies = Number(input);
-                        if (!Number.isInteger(copies) || copies < 1) {
-                          setError("Copy count must be a whole number greater than zero.");
-                          return;
-                        }
-                        if (copies !== game.copies) void updateGameCopies(game, copies);
-                      }}>
-                        <label className="copy-count-label" htmlFor={`copies-${game.id}`}>Copies</label>
-                        <input
-                          id={`copies-${game.id}`}
-                          aria-label={`Copies of ${game.name}`}
-                          name="copies"
-                          type="number"
-                          min="1"
-                          step="1"
-                          disabled={!copyCountsAvailable || !canManage}
-                          value={copyDrafts[game.id] ?? String(game.copies)}
-                          onChange={(event) => setCopyDrafts((current) => ({
-                            ...current,
-                            [game.id]: event.target.value,
-                          }))}
-                        />
-                        <button
-                          className="button button-outline button-small"
-                          disabled={!copyCountsAvailable || !canManage || (copyDrafts[game.id] ?? String(game.copies)) === String(game.copies)}
-                          type="submit"
-                        >Save</button>
-                      </form> : <span className="copy-count-readonly" aria-label={`${game.copies} copies`}>{game.copies}×</span>}
+                      <div className="game-copy-actions">
+                        <span className="copy-count-readonly" aria-label={`${game.copies} copies`}>{game.copies}×</span>
+                        {canManage && (
+                          <button
+                            className="button button-outline button-small game-edit-button"
+                            onClick={() => openGameEditor(game)}
+                            type="button"
+                          >Edit</button>
+                        )}
+                      </div>
                       {canManage ? (
                         <button className="icon-button" onClick={() => void removeGame(game)} title={`Remove ${game.name}`} type="button">×</button>
                       ) : <span className="game-row-spacer" aria-hidden="true" />}
