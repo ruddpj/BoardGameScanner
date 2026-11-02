@@ -144,7 +144,6 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
 .camera-zoom-control { display: flex; align-items: center; gap: 10px; max-width: 480px; margin: 8px 0; color: #cec5d9; font-size: 10px; }
 .camera-zoom-control input { flex: 1; accent-color: #9a6be0; }
 .camera-zoom-control > span:last-child { min-width: 35px; text-align: right; }
-.capture-button { margin-top: 10px; }
 .scan-confirmation { display: flex; align-items: center; gap: 9px; max-width: 480px; margin-top: 12px; padding: 10px 12px; border: 1px solid #395c48; border-radius: 6px; background: #1c2a22; color: #a0d4ad; font-size: 11px; }
 .scan-confirmation strong { color: #d3f0d7; }
 .scan-confirmation-icon { width: 20px; height: 20px; display: grid; flex: 0 0 20px; place-items: center; border-radius: 50%; background: #294532; color: #b3e2bd; font-weight: 700; }

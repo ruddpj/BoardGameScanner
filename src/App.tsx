@@ -1,4 +1,4 @@
-import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -127,13 +127,14 @@ function App() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraZoom, setCameraZoom] = useState<{ min: number; max: number; step: number; value: number } | null>(null);
-  const [capturingPhoto, setCapturingPhoto] = useState(false);
   const [manualUuid, setManualUuid] = useState("");
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
   const [creatingSession, setCreatingSession] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const scannerControlsRef = useRef<IScannerControls | null>(null);
   const scanBusyRef = useRef(false);
+  const recordScanRef = useRef<(rawValue: string) => void>(() => {});
   const scansByGame = useMemo(
     () => scans.reduce((counts, scan) => {
       counts.set(scan.game_id, (counts.get(scan.game_id) ?? 0) + 1);
@@ -333,13 +334,14 @@ function App() {
         cameraStreamRef.current = stream;
         videoRef.current!.srcObject = stream;
         await videoRef.current!.play();
-        if (active) setCameraReady(true);
         const videoTrack = stream.getVideoTracks()[0];
         const focusModes = videoTrack?.getCapabilities() as FocusModeCapabilities | undefined;
         if (videoTrack && focusModes?.focusMode?.includes("continuous")) {
           await videoTrack.applyConstraints({
             focusMode: { ideal: "continuous" },
-          } as FocusModeConstraints);
+          } as FocusModeConstraints).catch((focusError: Error) => {
+            if (active) setError(`Could not enable continuous autofocus: ${focusError.message}`);
+          });
         }
         const zoom = (videoTrack?.getCapabilities() as ZoomCapabilities | undefined)?.zoom;
         if (zoom?.min !== undefined && zoom.max !== undefined && zoom.max > zoom.min) {
@@ -352,6 +354,30 @@ function App() {
         } else {
           setCameraZoom(null);
         }
+        let lastDecodedText: string | null = null;
+        let lastSeenAt = 0;
+        const reader = new BrowserMultiFormatReader();
+        void reader.decodeFromVideoElement(videoRef.current!, (result) => {
+          if (!active) return;
+          const now = Date.now();
+          if (!result) {
+            if (now - lastSeenAt > 1200) lastDecodedText = null;
+            return;
+          }
+          lastSeenAt = now;
+          const decodedText = result.getText();
+          if (scanBusyRef.current || decodedText === lastDecodedText) return;
+          lastDecodedText = decodedText;
+          recordScanRef.current(decodedText);
+        }).then((controls) => {
+          if (active) {
+            scannerControlsRef.current = controls;
+            setCameraReady(true);
+          }
+          else controls.stop();
+        }).catch((scanError: Error) => {
+          if (active) setError(`Could not start continuous scanning: ${scanError.message}`);
+        });
       } catch (cameraError) {
         if (active) setError(`Could not start camera: ${(cameraError as Error).message}`);
       }
@@ -361,6 +387,8 @@ function App() {
       active = false;
       setCameraReady(false);
       setCameraZoom(null);
+      scannerControlsRef.current?.stop();
+      scannerControlsRef.current = null;
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
       cameraStreamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
@@ -686,6 +714,10 @@ function App() {
     }
   }
 
+  recordScanRef.current = (rawValue) => {
+    void recordScan(rawValue);
+  };
+
   async function changeSavedScanCount(game: Game, delta: number) {
     if (!supabase || !authUser || !session?.saved_at || scanBusyRef.current) return;
     const gameScans = scans.filter((scan) => scan.game_id === game.id);
@@ -736,45 +768,6 @@ function App() {
       setError(`Could not remove game from saved session: ${(scanError as Error).message}`);
     } finally {
       scanBusyRef.current = false;
-    }
-  }
-
-  async function captureAndScan() {
-    if (capturingPhoto || scanBusyRef.current) return;
-    const video = videoRef.current;
-    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth) {
-      setError("The camera is not ready yet. Wait for the preview, then take the picture.");
-      return;
-    }
-
-    setCapturingPhoto(true);
-    setError("");
-    setLastScan(null);
-    try {
-      const canvas = document.createElement("canvas");
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Could not capture an image from the camera.");
-      const videoTrack = cameraStreamRef.current?.getVideoTracks()[0];
-      if (videoTrack && "ImageCapture" in window) {
-        const photo = await new ImageCapture(videoTrack).takePhoto();
-        const image = await createImageBitmap(photo);
-        canvas.width = image.width;
-        canvas.height = image.height;
-        context.drawImage(image, 0, 0);
-        image.close();
-      } else {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      }
-      const result = new BrowserMultiFormatReader().decodeFromCanvas(canvas);
-      await recordScan(result.getText());
-    } catch (captureError) {
-      setError(
-        `Could not read a QR code from that picture: ${(captureError as Error).message}. Hold the phone slightly farther away until the code looks sharp, then try again.`,
-      );
-    } finally {
-      setCapturingPhoto(false);
     }
   }
 
@@ -1128,7 +1121,9 @@ function App() {
                         <button className="button button-light button-small camera-close" onClick={() => setScannerOpen(false)} type="button">Stop camera</button>
                       </div>
                       <p className="camera-tip">
-                        Keep the QR code flat and move the phone slightly farther away until it looks sharp.
+                        {cameraReady
+                          ? "Scanning continuously. Hold the QR code steady; to log another copy, move it out of view briefly, then show it again."
+                          : "Starting camera…"}
                         {cameraZoom && " Use the zoom control instead of moving too close."}
                       </p>
                       {cameraZoom && (
@@ -1146,12 +1141,6 @@ function App() {
                           <span>{cameraZoom.value.toFixed(1)}×</span>
                         </label>
                       )}
-                      <button
-                        className="button button-primary capture-button"
-                        disabled={!cameraReady || capturingPhoto}
-                        onClick={() => void captureAndScan()}
-                        type="button"
-                      >{capturingPhoto ? "Reading picture…" : "Take picture & scan"}</button>
                     </>
                   ) : <button className="button button-primary" disabled={!games.length} onClick={() => setScannerOpen(true)} type="button">Open camera</button>}
                   {lastScan && (
