@@ -1,5 +1,5 @@
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -110,6 +110,13 @@ function App() {
   const [loadingPastSessions, setLoadingPastSessions] = useState(false);
   const [sessionHistoryAvailable, setSessionHistoryAvailable] = useState(true);
   const [sessionInput, setSessionInput] = useState("");
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(!supabase);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [playerName, setPlayerName] = useState(
     () => localStorage.getItem("tabletop-tracker-player") ?? "",
   );
@@ -126,6 +133,33 @@ function App() {
     [scans],
   );
   const remaining = games.filter((game) => !scannedIds.has(game.id));
+  const canManage = !supabase || Boolean(authUser);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    void supabase.auth
+      .getSession()
+      .then(({ data, error: sessionError }) => {
+        if (sessionError) throw sessionError;
+        if (active) setAuthUser(data.session?.user ?? null);
+      })
+      .catch((sessionError: Error) => {
+        if (active) setError(`Could not check sign-in status: ${sessionError.message}`);
+      })
+      .finally(() => {
+        if (active) setAuthReady(true);
+      });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, authSession) => {
+      setAuthUser(authSession?.user ?? null);
+      setAuthReady(true);
+      if (!authSession) setAuthOpen(false);
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const refreshGames = useCallback(async () => {
     if (!supabase) {
@@ -290,6 +324,10 @@ function App() {
   }, [scannerOpen]);
 
   async function addGames(names: string[]) {
+    if (supabase && !authUser) {
+      setAuthOpen(true);
+      throw new Error("Sign in with Supabase to add games.");
+    }
     const normalized = [
       ...new Map(
         names
@@ -350,6 +388,10 @@ function App() {
   }
 
   async function removeGame(game: Game) {
+    if (supabase && !authUser) {
+      setAuthOpen(true);
+      return;
+    }
     if (!window.confirm(`Remove "${game.name}" from the collection?`)) return;
     setError("");
     try {
@@ -365,6 +407,10 @@ function App() {
   }
 
   async function updateGameCopies(game: Game, copies: number) {
+    if (supabase && !authUser) {
+      setAuthOpen(true);
+      return;
+    }
     setError("");
     try {
       if (supabase) {
@@ -390,6 +436,10 @@ function App() {
 
   async function createSession() {
     if (!supabase) return;
+    if (!authUser) {
+      setAuthOpen(true);
+      return;
+    }
     setCreatingSession(true);
     setError("");
     try {
@@ -422,6 +472,10 @@ function App() {
 
   async function saveSession() {
     if (!supabase || !session || session.saved_at) return;
+    if (!authUser) {
+      setAuthOpen(true);
+      return;
+    }
     setError("");
     try {
       const savedAt = new Date().toISOString();
@@ -460,6 +514,42 @@ function App() {
   function openPastSession(pastSession: ScanSession) {
     setSession(pastSession);
     setView("session");
+  }
+
+  async function signIn(event: React.FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+    setAuthBusy(true);
+    setAuthError("");
+    setError("");
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+      if (signInError) throw signInError;
+      setAuthUser(data.user);
+      setAuthPassword("");
+      setAuthOpen(false);
+      setAuthError("");
+      setNotice("Signed in. Game management and session creation are enabled.");
+    } catch (signInError) {
+      setAuthError(`Could not sign in: ${(signInError as Error).message}`);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function signOut() {
+    if (!supabase) return;
+    setError("");
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+      setError(`Could not sign out: ${signOutError.message}`);
+      return;
+    }
+    setAuthUser(null);
+    setNotice("Signed out. Visitors can still join and scan sessions.");
   }
 
   async function joinSession(event: React.FormEvent) {
@@ -578,8 +668,38 @@ function App() {
             <span className="status-dot" />
             {supabase ? "Cloud connected" : "Local mode"}
           </span>
+          {supabase && authUser ? (
+            <>
+              <span className="account-email">{authUser.email}</span>
+              <button className="button button-outline button-small" disabled={!authReady} onClick={() => void signOut()} type="button">Sign out</button>
+            </>
+          ) : supabase ? (
+            <button className="button button-outline button-small" disabled={!authReady} onClick={() => setAuthOpen(true)} type="button">
+              {authReady ? "Sign in" : "Checking…"}
+            </button>
+          ) : null}
         </div>
       </header>
+
+      {authOpen && (
+        <div className="auth-backdrop">
+          <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+            <div className="auth-dialog-heading">
+              <h2 id="auth-title">Admin sign in</h2>
+              <button className="icon-button" aria-label="Close sign-in dialog" onClick={() => setAuthOpen(false)} type="button">×</button>
+            </div>
+            <p>Sign in to manage games or create and finish sessions. Joining and scanning do not require an account.</p>
+            {authError && <p className="auth-error" role="alert">{authError}</p>}
+            <form onSubmit={(event) => void signIn(event)}>
+              <label htmlFor="auth-email">Email</label>
+              <input autoComplete="username" id="auth-email" type="email" required value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} />
+              <label htmlFor="auth-password">Password</label>
+              <input autoComplete="current-password" id="auth-password" type="password" required value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} />
+              <button className="button button-primary full-width" disabled={authBusy || !authReady} type="submit">{authBusy ? "Signing in…" : "Sign in"}</button>
+            </form>
+          </section>
+        </div>
+      )}
 
       <main className="main-content">
         <nav className="tabs" aria-label="Main navigation">
@@ -637,7 +757,7 @@ function App() {
                         <strong>{game.name}</strong>
                         <span>UUID · {game.id.slice(0, 8)}…</span>
                       </div>
-                      <form className="copy-count-form" onSubmit={(event) => {
+                      {canManage ? <form className="copy-count-form" onSubmit={(event) => {
                         event.preventDefault();
                         const input = new FormData(event.currentTarget).get("copies");
                         const copies = Number(input);
@@ -655,7 +775,7 @@ function App() {
                           type="number"
                           min="1"
                           step="1"
-                          disabled={!copyCountsAvailable}
+                          disabled={!copyCountsAvailable || !canManage}
                           value={copyDrafts[game.id] ?? String(game.copies)}
                           onChange={(event) => setCopyDrafts((current) => ({
                             ...current,
@@ -664,30 +784,42 @@ function App() {
                         />
                         <button
                           className="button button-outline button-small"
-                          disabled={!copyCountsAvailable || (copyDrafts[game.id] ?? String(game.copies)) === String(game.copies)}
+                          disabled={!copyCountsAvailable || !canManage || (copyDrafts[game.id] ?? String(game.copies)) === String(game.copies)}
                           type="submit"
                         >Save</button>
-                      </form>
-                      <button className="icon-button" onClick={() => void removeGame(game)} title={`Remove ${game.name}`} type="button">×</button>
+                      </form> : <span className="copy-count-readonly" aria-label={`${game.copies} copies`}>{game.copies}×</span>}
+                      {canManage ? (
+                        <button className="icon-button" onClick={() => void removeGame(game)} title={`Remove ${game.name}`} type="button">×</button>
+                      ) : <span className="game-row-spacer" aria-hidden="true" />}
                     </article>
                   ))
                 )}
               </div>
               <aside className="add-panel">
-                <div className="panel-title"><h3>Add games</h3></div>
-                <form onSubmit={(event) => void addSingleGame(event)}>
-                  <label htmlFor="game-name">Game name</label>
-                  <div className="input-action">
-                    <input id="game-name" maxLength={120} placeholder="e.g. Catan" value={nameInput} onChange={(event) => setNameInput(event.target.value)} />
-                    <button className="button button-green button-small" disabled={!nameInput.trim()} type="submit">Add</button>
+                {canManage ? (
+                  <>
+                    <div className="panel-title"><h3>Add games</h3></div>
+                    <form onSubmit={(event) => void addSingleGame(event)}>
+                      <label htmlFor="game-name">Game name</label>
+                      <div className="input-action">
+                        <input id="game-name" maxLength={120} placeholder="e.g. Catan" value={nameInput} onChange={(event) => setNameInput(event.target.value)} />
+                        <button className="button button-green button-small" disabled={!nameInput.trim()} type="submit">Add</button>
+                      </div>
+                    </form>
+                    <div className="form-divider"><span>OR</span></div>
+                    <form onSubmit={(event) => void addBulkGames(event)}>
+                      <label htmlFor="bulk-games">One game per line</label>
+                      <textarea id="bulk-games" placeholder={"Wingspan\nTicket to Ride\nAzul"} rows={5} value={bulkInput} onChange={(event) => setBulkInput(event.target.value)} />
+                      <button className="button button-outline full-width" disabled={!bulkInput.trim()} type="submit">Add games <span>↗</span></button>
+                    </form>
+                  </>
+                ) : (
+                  <div className="manage-prompt">
+                    <h3>Manage games</h3>
+                    <p>Sign in to add, edit, or remove games.</p>
+                    <button className="button button-primary" onClick={() => setAuthOpen(true)} type="button">Sign in</button>
                   </div>
-                </form>
-                <div className="form-divider"><span>OR</span></div>
-                <form onSubmit={(event) => void addBulkGames(event)}>
-                  <label htmlFor="bulk-games">One game per line</label>
-                  <textarea id="bulk-games" placeholder={"Wingspan\nTicket to Ride\nAzul"} rows={5} value={bulkInput} onChange={(event) => setBulkInput(event.target.value)} />
-                  <button className="button button-outline full-width" disabled={!bulkInput.trim()} type="submit">Add games <span>↗</span></button>
-                </form>
+                )}
               </aside>
             </div>
           </section>
@@ -763,8 +895,10 @@ function App() {
                 <div className="session-actions">
                   {session.saved_at ? (
                     <span className="saved-badge">Saved {new Date(session.saved_at).toLocaleString()}</span>
-                  ) : (
+                  ) : authUser ? (
                     <button className="button button-primary button-small" onClick={() => void saveSession()} type="button">Finish session</button>
+                  ) : (
+                    <button className="button button-outline button-small" onClick={() => setAuthOpen(true)} type="button">Sign in to finish</button>
                   )}
                   <button className="button button-outline button-small" onClick={() => { setSession(null); setScans([]); setView("past-sessions"); }} type="button">
                     {session.saved_at ? "Back to past sessions" : "Leave session"}
@@ -781,7 +915,14 @@ function App() {
               <div className="session-options">
                 <article className="session-card">
                   <h3>Create a session</h3>
-                  <button className="button button-primary full-width" disabled={creatingSession} onClick={() => void createSession()} type="button">{creatingSession ? "Creating…" : "Create session"}</button>
+                  {authUser ? (
+                    <button className="button button-primary full-width" disabled={creatingSession || !authReady} onClick={() => void createSession()} type="button">{creatingSession ? "Creating…" : "Create session"}</button>
+                  ) : (
+                    <>
+                      <p>Sign in to start a new session.</p>
+                      <button className="button button-outline full-width" disabled={!authReady} onClick={() => setAuthOpen(true)} type="button">Sign in to create</button>
+                    </>
+                  )}
                 </article>
                 <article className="session-card">
                   <h3>Join a session</h3>

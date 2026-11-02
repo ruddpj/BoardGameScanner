@@ -62,24 +62,97 @@ create trigger prevent_scans_in_saved_sessions
   before insert or update on public.scans
   for each row execute function public.prevent_scans_in_saved_sessions();
 
+create or replace function public.prevent_saved_session_changes()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.code is distinct from old.code
+    or new.created_at is distinct from old.created_at then
+    raise exception 'Session code and creation time cannot be changed';
+  end if;
+
+  if old.saved_at is not null then
+    raise exception 'A finished session cannot be changed';
+  end if;
+
+  if new.saved_at is null then
+    raise exception 'A session can only be updated by finishing it';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists prevent_saved_session_changes on public.scan_sessions;
+create trigger prevent_saved_session_changes
+  before update on public.scan_sessions
+  for each row execute function public.prevent_saved_session_changes();
+
 alter table public.games enable row level security;
 alter table public.scan_sessions enable row level security;
 alter table public.scans enable row level security;
 
-drop policy if exists "Public can manage games" on public.games;
-create policy "Public can manage games"
-  on public.games for all to anon, authenticated
-  using (true) with check (true);
+do $$
+declare
+  existing_policy record;
+begin
+  for existing_policy in
+    select tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('games', 'scan_sessions', 'scans')
+  loop
+    execute format(
+      'drop policy %I on public.%I',
+      existing_policy.policyname,
+      existing_policy.tablename
+    );
+  end loop;
+end
+$$;
 
-drop policy if exists "Public can manage scan sessions" on public.scan_sessions;
-create policy "Public can manage scan sessions"
-  on public.scan_sessions for all to anon, authenticated
-  using (true) with check (true);
+create policy "Anyone can read games"
+  on public.games for select to anon, authenticated
+  using (true);
+create policy "Authenticated can add games"
+  on public.games for insert to authenticated
+  with check (auth.uid() is not null);
+create policy "Authenticated can edit games"
+  on public.games for update to authenticated
+  using (auth.uid() is not null)
+  with check (auth.uid() is not null);
+create policy "Authenticated can remove games"
+  on public.games for delete to authenticated
+  using (auth.uid() is not null);
 
-drop policy if exists "Public can manage scans" on public.scans;
-create policy "Public can manage scans"
-  on public.scans for all to anon, authenticated
-  using (true) with check (true);
+create policy "Anyone can read scan sessions"
+  on public.scan_sessions for select to anon, authenticated
+  using (true);
+create policy "Authenticated can create scan sessions"
+  on public.scan_sessions for insert to authenticated
+  with check (auth.uid() is not null and saved_at is null);
+create policy "Authenticated can finish scan sessions"
+  on public.scan_sessions for update to authenticated
+  using (auth.uid() is not null and saved_at is null)
+  with check (auth.uid() is not null and saved_at is not null);
+
+revoke update on public.scan_sessions from anon, authenticated;
+grant update (saved_at) on public.scan_sessions to authenticated;
+
+create policy "Anyone can read scans"
+  on public.scans for select to anon, authenticated
+  using (true);
+create policy "Anyone can add scans to active sessions"
+  on public.scans for insert to anon, authenticated
+  with check (
+    exists (
+      select 1
+      from public.scan_sessions
+      where scan_sessions.id = scans.session_id
+        and scan_sessions.saved_at is null
+    )
+  );
 
 do $$
 begin
