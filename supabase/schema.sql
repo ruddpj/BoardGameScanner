@@ -21,12 +21,44 @@ alter table public.scan_sessions
   add column if not exists saved_at timestamptz;
 
 create table if not exists public.scans (
+  id uuid not null default gen_random_uuid(),
   session_id uuid not null references public.scan_sessions(id) on delete cascade,
   game_id uuid not null references public.games(id) on delete cascade,
   scanned_by text not null default 'Player',
   scanned_at timestamptz not null default now(),
-  primary key (session_id, game_id)
+  primary key (id)
 );
+
+alter table public.scans
+  add column if not exists id uuid;
+
+update public.scans
+set id = gen_random_uuid()
+where id is null;
+
+alter table public.scans
+  alter column id set default gen_random_uuid(),
+  alter column id set not null;
+
+do $$
+declare
+  existing_primary_key text;
+begin
+  select conname into existing_primary_key
+  from pg_constraint
+  where conrelid = 'public.scans'::regclass
+    and contype = 'p';
+
+  if existing_primary_key is not null then
+    execute format('alter table public.scans drop constraint %I', existing_primary_key);
+  end if;
+
+  alter table public.scans add constraint scans_pkey primary key (id);
+end
+$$;
+
+create index if not exists scans_session_scanned_at_idx
+  on public.scans (session_id, scanned_at desc);
 
 create or replace function public.prevent_scans_in_saved_sessions()
 returns trigger

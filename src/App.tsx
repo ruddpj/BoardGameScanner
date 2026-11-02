@@ -1,11 +1,11 @@
-import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { BrowserMultiFormatReader } from "@zxing/browser";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Game = { id: string; name: string; copies: number };
 type ScanSession = { id: string; code: string; created_at: string; saved_at?: string | null };
-type Scan = { game_id: string; scanned_at: string };
+type Scan = { id: string; game_id: string; scanned_at: string };
 type View = "collection" | "labels" | "session" | "past-sessions";
 type FocusModeCapabilities = MediaTrackCapabilities & { focusMode?: string[] };
 type FocusModeConstraints = MediaTrackConstraints & { focusMode?: ConstrainDOMString };
@@ -122,17 +122,25 @@ function App() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [lastScan, setLastScan] = useState<{ gameName: string; alreadyScanned: boolean } | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [capturingPhoto, setCapturingPhoto] = useState(false);
   const [manualUuid, setManualUuid] = useState("");
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
   const [creatingSession, setCreatingSession] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const scannerControlsRef = useRef<IScannerControls | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const scanBusyRef = useRef(false);
-  const scannedIds = useMemo(
-    () => new Set(scans.map((scan) => scan.game_id)),
+  const scansByGame = useMemo(
+    () => scans.reduce((counts, scan) => {
+      counts.set(scan.game_id, (counts.get(scan.game_id) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>()),
     [scans],
   );
-  const remaining = games.filter((game) => !scannedIds.has(game.id));
+  const totalCopies = games.reduce((total, game) => total + game.copies, 0);
+  const remaining = games.filter(
+    (game) => (scansByGame.get(game.id) ?? 0) < game.copies,
+  );
   const canManage = !supabase || Boolean(authUser);
 
   useEffect(() => {
@@ -189,7 +197,7 @@ function App() {
     if (!supabase) return;
     const { data, error: scanError } = await supabase
       .from("scans")
-      .select("game_id, scanned_at")
+      .select("id, game_id, scanned_at")
       .eq("session_id", sessionId)
       .order("scanned_at", { ascending: false });
     if (scanError) throw scanError;
@@ -301,7 +309,6 @@ function App() {
 
   useEffect(() => {
     if (!scannerOpen || !videoRef.current) return;
-    const reader = new BrowserMultiFormatReader();
     const cameraVideoConstraints: FocusModeConstraints = {
       facingMode: { ideal: "environment" },
       width: { ideal: 1920 },
@@ -309,41 +316,38 @@ function App() {
       focusMode: { ideal: "continuous" },
     };
     let active = true;
-    void reader
-      .decodeFromConstraints(
-        {
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: cameraVideoConstraints,
-        },
-        videoRef.current,
-        (result) => {
-          if (result && active && !scanBusyRef.current) {
-            void recordScan(result.getText());
-          }
-        },
-      )
-      .then((controls) => {
-        if (active) scannerControlsRef.current = controls;
-        else controls.stop();
-        const videoTrack = videoRef.current?.srcObject instanceof MediaStream
-          ? videoRef.current.srcObject.getVideoTracks()[0]
-          : undefined;
-        const focusModes = videoTrack?.getCapabilities() as FocusModeCapabilities | undefined;
-        if (active && videoTrack && focusModes?.focusMode?.includes("continuous")) {
-          void videoTrack.applyConstraints({
-            focusMode: { ideal: "continuous" },
-          } as FocusModeConstraints).catch((focusError: Error) => {
-            if (active) setError(`Could not enable camera autofocus: ${focusError.message}`);
-          });
+        });
+        if (!active) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
         }
-      })
-      .catch((cameraError: Error) => {
-        if (active) setError(`Could not start camera: ${cameraError.message}`);
-      });
+        cameraStreamRef.current = stream;
+        videoRef.current!.srcObject = stream;
+        await videoRef.current!.play();
+        if (active) setCameraReady(true);
+        const videoTrack = stream.getVideoTracks()[0];
+        const focusModes = videoTrack?.getCapabilities() as FocusModeCapabilities | undefined;
+        if (videoTrack && focusModes?.focusMode?.includes("continuous")) {
+          await videoTrack.applyConstraints({
+            focusMode: { ideal: "continuous" },
+          } as FocusModeConstraints);
+        }
+      } catch (cameraError) {
+        if (active) setError(`Could not start camera: ${(cameraError as Error).message}`);
+      }
+    };
+    void startCamera();
     return () => {
       active = false;
-      scannerControlsRef.current?.stop();
-      scannerControlsRef.current = null;
+      setCameraReady(false);
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
     };
   }, [scannerOpen]);
 
@@ -639,36 +643,59 @@ function App() {
 
   async function recordScan(rawValue: string) {
     if (!supabase || !session || session.saved_at) return;
+    if (scanBusyRef.current) return;
     const id = rawValue.trim().toLowerCase();
     const game = games.find((entry) => entry.id.toLowerCase() === id);
     if (!game) {
       setError(`No game matches QR value "${rawValue}".`);
       return;
     }
-    if (scannedIds.has(game.id)) {
-      setLastScan({ gameName: game.name, alreadyScanned: true });
-      setNotice(`${game.name} has already been scanned in this session.`);
-      return;
-    }
+    const alreadyScanned = (scansByGame.get(game.id) ?? 0) > 0;
     scanBusyRef.current = true;
     setError("");
     try {
-      const { error: insertError } = await supabase.from("scans").upsert(
-        {
-          session_id: session.id,
-          game_id: game.id,
-        },
-        { onConflict: "session_id,game_id", ignoreDuplicates: true },
-      );
+      const { error: insertError } = await supabase.from("scans").insert({
+        session_id: session.id,
+        game_id: game.id,
+      });
       if (insertError) throw insertError;
-      setLastScan({ gameName: game.name, alreadyScanned: false });
-      setNotice(`${game.name} scanned.`);
+      setLastScan({ gameName: game.name, alreadyScanned });
+      setNotice(alreadyScanned ? `${game.name} scanned again.` : `${game.name} scanned.`);
       setManualUuid("");
       await refreshScans(session.id);
     } catch (scanError) {
       setError(`Could not save scan: ${(scanError as Error).message}`);
     } finally {
       scanBusyRef.current = false;
+    }
+  }
+
+  async function captureAndScan() {
+    if (capturingPhoto || scanBusyRef.current) return;
+    const video = videoRef.current;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth) {
+      setError("The camera is not ready yet. Wait for the preview, then take the picture.");
+      return;
+    }
+
+    setCapturingPhoto(true);
+    setError("");
+    setLastScan(null);
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Could not capture an image from the camera.");
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const result = new BrowserMultiFormatReader().decodeFromCanvas(canvas);
+      await recordScan(result.getText());
+    } catch (captureError) {
+      setError(
+        `Could not read a QR code from that picture: ${(captureError as Error).message}. Try moving closer and taking another picture.`,
+      );
+    } finally {
+      setCapturingPhoto(false);
     }
   }
 
@@ -985,7 +1012,7 @@ function App() {
               <div className="session-board">
                 <div className="session-banner">
                   <div><div className="session-label">Session code</div><div className="session-code">{session.code.split("").map((letter, index) => <span key={`${letter}-${index}`}>{letter}</span>)}</div></div>
-                  <div className="session-progress"><strong>{scans.length}<span> / {games.length}</span></strong><span>scanned</span></div>
+                  <div className="session-progress"><strong>{scans.length}<span> / {totalCopies}</span></strong><span>copies scanned</span></div>
                   <button className="button button-light button-small" onClick={() => {
                     void navigator.clipboard.writeText(session.code)
                       .then(() => setNotice("Session code copied."))
@@ -999,15 +1026,23 @@ function App() {
                   {session.saved_at ? (
                     <p className="saved-session-note">This session is saved and read-only.</p>
                   ) : scannerOpen ? (
-                    <div className="camera-wrap">
-                      <video ref={videoRef} className="camera-feed" muted playsInline />
-                      <button className="button button-light button-small camera-close" onClick={() => setScannerOpen(false)} type="button">Stop camera</button>
-                    </div>
+                    <>
+                      <div className="camera-wrap">
+                        <video ref={videoRef} className="camera-feed" muted playsInline />
+                        <button className="button button-light button-small camera-close" onClick={() => setScannerOpen(false)} type="button">Stop camera</button>
+                      </div>
+                      <button
+                        className="button button-primary capture-button"
+                        disabled={!cameraReady || capturingPhoto}
+                        onClick={() => void captureAndScan()}
+                        type="button"
+                      >{capturingPhoto ? "Reading picture…" : "Take picture & scan"}</button>
+                    </>
                   ) : <button className="button button-primary" disabled={!games.length} onClick={() => setScannerOpen(true)} type="button">Open camera</button>}
                   {lastScan && (
                     <div className={`scan-confirmation ${lastScan.alreadyScanned ? "scan-confirmation-repeat" : ""}`} role="status">
-                      <span className="scan-confirmation-icon">{lastScan.alreadyScanned ? "!" : "✓"}</span>
-                      <span>{lastScan.alreadyScanned ? "Already scanned" : "QR scanned"}: <strong>{lastScan.gameName}</strong></span>
+                      <span className="scan-confirmation-icon">✓</span>
+                      <span>{lastScan.alreadyScanned ? "Additional copy logged" : "QR scanned"}: <strong>{lastScan.gameName}</strong></span>
                     </div>
                   )}
                   {!session.saved_at && <form className="manual-scan" onSubmit={(event) => { event.preventDefault(); void recordScan(manualUuid); }}>
@@ -1018,13 +1053,16 @@ function App() {
                 <div className="scan-lists">
                   <div>
                     <div className="list-heading"><h3>Still on the shelf</h3><span className="list-count remaining-count">{remaining.length}</span></div>
-                    {remaining.length ? <ul className="scan-list">{remaining.map((game) => <li key={game.id}><span className="scan-status pending" /><span>{game.name}{game.copies > 1 ? ` ×${game.copies}` : ""}</span></li>)}</ul> : <p className="list-empty">No unscanned games.</p>}
+                    {remaining.length ? <ul className="scan-list">{remaining.map((game) => {
+                      const remainingCopies = game.copies - (scansByGame.get(game.id) ?? 0);
+                      return <li key={game.id}><span className="scan-status pending" /><span>{game.name}<small>{remainingCopies} of {game.copies} copies remaining</small></span></li>;
+                    })}</ul> : <p className="list-empty">No unscanned games.</p>}
                   </div>
                   <div>
                     <div className="list-heading"><h3>Found</h3><span className="list-count found-count">{scans.length}</span></div>
-                    {scans.length ? <ul className="scan-list">{scans.map((scan) => {
-                      const game = games.find((entry) => entry.id === scan.game_id);
-                      return game ? <li key={scan.game_id}><span className="scan-status found">✓</span><span>{game.name}{game.copies > 1 ? ` ×${game.copies}` : ""}</span></li> : null;
+                    {scans.length ? <ul className="scan-list">{games.filter((game) => scansByGame.has(game.id)).map((game) => {
+                      const scannedCopies = scansByGame.get(game.id) ?? 0;
+                      return <li key={game.id}><span className="scan-status found">✓</span><span>{game.name}<small>{scannedCopies} scan{scannedCopies === 1 ? "" : "s"} logged · {game.copies} listed {game.copies === 1 ? "copy" : "copies"}</small></span></li>;
                     })}</ul> : <p className="list-empty">No scans yet.</p>}
                   </div>
                 </div>

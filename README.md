@@ -26,7 +26,8 @@ Without Supabase configuration, the catalog is stored locally in the current bro
 - Each game starts with one copy. Change a game's copy count in its collection row and save it; counts are shared across devices and shown in scan lists.
 - Open **QR codes** to generate an individual label or every label in the catalog; use **Print** for a printable sheet.
 - Create a scan session and share its four-letter join code. Other players open the same site and enter the code.
-- Scan a label with the device camera, or paste a UUID into the manual scan field. The session updates live and shows scanned and remaining games.
+- Point the device camera at a label and select **Take picture & scan** to read the QR code in that still image, or paste a UUID into the manual scan field. Take another picture of the same label to log another copy; scans can exceed the game's listed copy count.
+- The session updates live with the number of copies logged and the listed copies still unscanned.
 - Select **Finish session** when scanning is finished. Saved sessions become read-only and can be reopened from **Past sessions**; signed-in managers can delete saved sessions and their scan results.
 
 QR codes contain the game's UUID, not its name, so labels remain unique even when games have similar names.

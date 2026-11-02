@@ -140,6 +140,7 @@ textarea { display: block; resize: vertical; line-height: 1.5; }
 .camera-wrap { position: relative; max-width: 480px; overflow: hidden; border-radius: 7px; background: #08070b; }
 .camera-feed { width: 100%; max-height: 340px; object-fit: cover; }
 .camera-close { position: absolute; top: 9px; right: 9px; }
+.capture-button { margin-top: 10px; }
 .scan-confirmation { display: flex; align-items: center; gap: 9px; max-width: 480px; margin-top: 12px; padding: 10px 12px; border: 1px solid #395c48; border-radius: 6px; background: #1c2a22; color: #a0d4ad; font-size: 11px; }
 .scan-confirmation strong { color: #d3f0d7; }
 .scan-confirmation-icon { width: 20px; height: 20px; display: grid; flex: 0 0 20px; place-items: center; border-radius: 50%; background: #294532; color: #b3e2bd; font-weight: 700; }
