@@ -73,7 +73,7 @@ a { color: inherit; }
 .initial-4 { background: #30273d; color: #d2a8ef; }
 .game-info { min-width: 0; display: grid; gap: 4px; }
 .game-info strong { overflow: hidden; color: #e7e1ef; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.game-info span { color: #948ba1; font-family: ui-monospace, monospace; font-size: 9px; }
+.game-info span { color: #948ba1; font-family: ui-monospace, monospace; font-size: 9px; overflow-wrap: anywhere; }
 .copy-count-form { width: 146px; display: grid; grid-template-columns: 34px 50px 44px; align-items: center; gap: 6px; }
 .copy-count-label { margin: 0; color: #a49bad; font-size: 9px; }
 .copy-count-form input { width: 52px; padding: 6px; text-align: center; }

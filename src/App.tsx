@@ -998,7 +998,7 @@ function App() {
                       <div className={`game-initial initial-${index % 5}`}>{game.name.trim()[0]?.toUpperCase() ?? "?"}</div>
                       <div className="game-info">
                         <strong>{game.name}</strong>
-                        <span>UUID · {game.id.slice(0, 8)}…</span>
+                        <span>UUID · {game.id}</span>
                       </div>
                       {canManage ? <form className="copy-count-form" onSubmit={(event) => {
                         event.preventDefault();
