@@ -6,7 +6,7 @@ A board game catalog, UUID QR label maker, and shared live scan-session tracker.
 
 1. Create a Supabase project.
 2. In the Supabase SQL Editor, run [`supabase/schema.sql`](./supabase/schema.sql).
-3. Copy the project URL and anon/public key from **Project Settings → API**.
+3. Copy the **Project URL** and anon/public key from **Project Settings → API**. Use the project URL by itself (for example, `https://your-project.supabase.co`), not the dashboard URL or a URL ending in `/rest/v1`. The app also strips a trailing `/rest/v1` if it was included accidentally.
 4. For local development, copy `.env.example` to `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 5. To publish from GitHub Actions, add repository secrets named `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with those same values.
 6. In the repository settings, open **Pages** and set the build/deployment source to **GitHub Actions**.

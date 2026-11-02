@@ -11,8 +11,44 @@ type View = "collection" | "labels" | "session";
 const storageKey = "tabletop-tracker-games";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const supabase: SupabaseClient | null =
-  supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+
+function configureSupabase(
+  configuredUrl: string | undefined,
+  configuredKey: string | undefined,
+): { client: SupabaseClient | null; error: string | null } {
+  if (!configuredUrl && !configuredKey) return { client: null, error: null };
+  if (!configuredUrl || !configuredKey) {
+    return {
+      client: null,
+      error: "Supabase configuration is incomplete. Set both the project URL and anon key.",
+    };
+  }
+
+  try {
+    const url = new URL(configuredUrl.trim());
+    const path = url.pathname.replace(/\/+$/, "");
+    if (path === "/rest/v1") {
+      url.pathname = "";
+    } else if (path) {
+      throw new Error("Use the Supabase Project URL, not a dashboard or API endpoint URL.");
+    }
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && url.hostname === "localhost")) {
+      throw new Error("The Supabase Project URL must use HTTPS.");
+    }
+    if (url.username || url.password || url.search || url.hash) {
+      throw new Error("The Supabase Project URL must not include credentials, a query, or a fragment.");
+    }
+    return { client: createClient(url.origin, configuredKey.trim()), error: null };
+  } catch (configurationError) {
+    return {
+      client: null,
+      error: `Supabase configuration error: ${(configurationError as Error).message}`,
+    };
+  }
+}
+
+const supabaseConfiguration = configureSupabase(supabaseUrl, supabaseKey);
+const supabase = supabaseConfiguration.client;
 
 function readLocalGames(): Game[] {
   try {
@@ -41,7 +77,7 @@ function App() {
   const [view, setView] = useState<View>("collection");
   const [games, setGames] = useState<Game[]>(readLocalGames);
   const [loadingGames, setLoadingGames] = useState(Boolean(supabase));
-  const [error, setError] = useState("");
+  const [error, setError] = useState(supabaseConfiguration.error ?? "");
   const [notice, setNotice] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [bulkInput, setBulkInput] = useState("");
